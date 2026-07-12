@@ -102,15 +102,15 @@ jobs:
             --ks $BUILD/debug.keystore \
             --ks-pass pass:android \
             --key-pass pass:android \
-            --out $BUILD/eyeplus-v1.0.apk \
+            --out $BUILD/eyeplus-v1.2.apk \
             $BUILD/staging/repackaged.apk
 
-        $BT/apksigner verify $BUILD/eyeplus-v1.0.apk
+        $BT/apksigner verify $BUILD/eyeplus-v1.2.apk
         echo "=== BUILD OK ==="
-        ls -la $BUILD/eyeplus-v1.0.apk
+        ls -la $BUILD/eyeplus-v1.2.apk
 
     - name: Upload APK artifact
       uses: actions/upload-artifact@v4
       with:
         name: eyeplus-apk
-        path: build/eyeplus-v1.0.apk
+        path: build/eyeplus-v1.2.apk
