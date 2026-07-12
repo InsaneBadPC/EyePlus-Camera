@@ -20,6 +20,11 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v4
+      with:
+        gradle-version: '8.2'
+
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
 
@@ -43,67 +48,13 @@ jobs:
         }
         CONFIGEOF
 
-    - name: Build APK
+    - name: Build debug APK
+      run: gradle assembleDebug --no-daemon
+
+    - name: Rename APK
       run: |
-        set -e
-        SDK=$ANDROID_HOME
-        BT=$SDK/build-tools/34.0.0
-        PLATFORM=$SDK/platforms/android-34/android.jar
-        SRC=app/src/main
-        BUILD=build
-        ROOT=$PWD
-
-        rm -rf $BUILD
-        mkdir -p $BUILD/gen $BUILD/obj/classes $BUILD/dex $BUILD/staging
-
-        echo "=== AAPT2 compile ==="
-        find $SRC/res -name "*.xml" -exec $BT/aapt2 compile {} -o $BUILD/obj/ \;
-        find $SRC/res -name "*.png" -exec $BT/aapt2 compile {} -o $BUILD/obj/ \; 2>/dev/null || true
-
-        echo "=== AAPT2 link ==="
-        $BT/aapt2 link -I $PLATFORM \
-            --manifest $SRC/AndroidManifest.xml \
-            --java $BUILD/gen \
-            --min-sdk-version 24 \
-            --target-sdk-version 34 \
-            -A $SRC/assets \
-            -o $BUILD/staging/app-unsigned.apk \
-            $(find $BUILD/obj -name "*.flat")
-
-        echo "=== Compile Java ==="
-        find $SRC/java $BUILD/gen -name "*.java" > $BUILD/srcs.txt
-        javac -source 17 -target 17 -classpath $PLATFORM -d $BUILD/obj/classes @$BUILD/srcs.txt
-
-        echo "=== DEX ==="
-        find $BUILD/obj/classes -name "*.class" > $BUILD/classes.txt
-        $BT/d8 --output $BUILD/dex --lib $PLATFORM $(cat $BUILD/classes.txt)
-        ls -la $BUILD/dex/
-
-        echo "=== Add DEX to APK (no repackage) ==="
-        cp $BUILD/staging/app-unsigned.apk $BUILD/staging/with-dex.apk
-        cd $BUILD/dex
-        zip -q -0 $ROOT/$BUILD/staging/with-dex.apk classes.dex
-        cd $ROOT
-
-        echo "=== Sign ==="
-        keytool -genkeypair -v -keystore $BUILD/debug.keystore -alias eyeplus \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -storepass android -keypass android \
-            -dname "CN=EyePlus,OU=Dev,O=EyePlus,L=Prague,ST=CR,C=CZ" 2>/dev/null
-
-        echo "=== Zipalign ==="
-        $BT/zipalign -f 4 $BUILD/staging/with-dex.apk $BUILD/staging/aligned.apk
-
-        $BT/apksigner sign \
-            --ks $BUILD/debug.keystore \
-            --ks-pass pass:android \
-            --key-pass pass:android \
-            --out $BUILD/eyeplus-v1.5.apk \
-            $BUILD/staging/aligned.apk
-
-        $BT/apksigner verify $BUILD/eyeplus-v1.5.apk
-        echo "=== BUILD OK ==="
-        ls -la $BUILD/eyeplus-v1.5.apk
+        mkdir -p build
+        cp app/build/outputs/apk/debug/app-debug.apk build/eyeplus-v1.5.apk
 
     - name: Upload APK artifact
       uses: actions/upload-artifact@v4
