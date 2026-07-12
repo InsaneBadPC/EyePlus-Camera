@@ -1,0 +1,1001 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <title>EYEPLUS Camera AI</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📷</text></svg>">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --bg: #0d1117; --bg2: #161b22; --bg3: #21262d; --border: #30363d;
+            --text: #e6edf3; --text2: #8b949e; --accent: #58a6ff; --accent2: #1f6feb;
+            --green: #3fb950; --red: #f85149; --orange: #d29922; --purple: #bc8cff;
+            --radius: 8px; --safe-bottom: env(safe-area-inset-bottom, 0px);
+        }
+        html, body { height: 100%; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; overflow: hidden; }
+        #app { height: 100%; position: relative; }
+        .screen { display: none; height: 100%; flex-direction: column; }
+        .screen.active { display: flex; }
+        .panel { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: var(--bg); z-index: 100; display: flex; flex-direction: column; overflow: hidden; }
+        .panel.hidden { display: none; }
+        .hidden { display: none !important; }
+
+        /* Auth */
+        .auth-container { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; padding: 24px; }
+        .logo { text-align: center; margin-bottom: 32px; }
+        .logo-icon { font-size: 64px; margin-bottom: 8px; }
+        .logo h1 { font-size: 28px; font-weight: 700; letter-spacing: 2px; }
+        .logo p { color: var(--text2); margin-top: 4px; }
+        .auth-form { width: 100%; max-width: 320px; display: flex; flex-direction: column; gap: 12px; }
+        .auth-form input { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; color: var(--text); font-size: 15px; outline: none; }
+        .auth-form input:focus { border-color: var(--accent); }
+        .auth-divider { color: var(--text2); margin: 16px 0; font-size: 13px; }
+        .btn-primary { background: var(--accent2); color: #fff; border: none; border-radius: var(--radius); padding: 12px 20px; font-size: 15px; font-weight: 600; cursor: pointer; }
+        .btn-primary:active { opacity: 0.8; }
+        .btn-secondary { background: var(--bg3); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 20px; font-size: 15px; cursor: pointer; }
+        .btn-text { background: none; border: none; color: var(--accent); font-size: 14px; cursor: pointer; padding: 8px; }
+        .btn-danger { background: var(--red); color: #fff; border: none; border-radius: var(--radius); padding: 12px 20px; font-size: 15px; cursor: pointer; }
+        .btn-sm { padding: 6px 12px; font-size: 12px; }
+
+        /* Top bar */
+        .top-bar { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--bg2); border-bottom: 1px solid var(--border); min-height: 48px; }
+        .top-left { display: flex; align-items: center; gap: 8px; }
+        .top-right { display: flex; align-items: center; gap: 6px; }
+        .app-title { font-weight: 700; font-size: 16px; letter-spacing: 1px; }
+        .status-badge { font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 600; text-transform: uppercase; }
+        .status-badge.offline { background: var(--red); color: #fff; }
+        .status-badge.online { background: var(--green); color: #fff; }
+        .icon-btn { background: none; border: none; color: var(--text); font-size: 18px; padding: 6px 8px; cursor: pointer; border-radius: var(--radius); }
+        .icon-btn:active { background: var(--bg3); }
+        .mode-switch { display: flex; background: var(--bg3); border-radius: var(--radius); overflow: hidden; }
+        .mode-btn { background: none; border: none; padding: 6px 10px; cursor: pointer; font-size: 14px; opacity: 0.5; }
+        .mode-btn.active { opacity: 1; background: var(--accent2); }
+
+        /* Mode bar */
+        .mode-bar { padding: 6px 12px; font-size: 12px; font-weight: 600; text-align: center; }
+        .mode-bar.local { background: rgba(63, 185, 80, 0.15); color: var(--green); }
+        .mode-bar.online { background: rgba(88, 166, 255, 0.15); color: var(--accent); }
+
+        /* Video */
+        .video-container { flex: 1; position: relative; background: #000; min-height: 0; overflow: hidden; }
+        .video-container canvas, .video-container video { width: 100%; height: 100%; object-fit: contain; }
+        .video-placeholder { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text2); }
+        .placeholder-icon { font-size: 48px; margin-bottom: 12px; }
+        .placeholder-sub { font-size: 12px; margin-top: 4px; }
+        .motion-alert { position: absolute; top: 8px; left: 8px; right: 8px; background: rgba(248, 81, 73, 0.9); color: #fff; padding: 8px 12px; border-radius: var(--radius); display: flex; justify-content: space-between; font-weight: 600; font-size: 13px; }
+        .rec-indicator { position: absolute; top: 8px; right: 8px; background: rgba(248, 81, 73, 0.85); color: #fff; padding: 4px 10px; border-radius: 12px; display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; }
+        .rec-dot { width: 8px; height: 8px; background: #fff; border-radius: 50%; animation: blink 1s infinite; }
+        @keyframes blink { 50% { opacity: 0.3; } }
+        .ptz-touch-zone { position: absolute; inset: 0; }
+
+        /* Voice btn overlay on video */
+        .voice-overlay-btn { position: absolute; bottom: 12px; right: 12px; width: 48px; height: 48px; border-radius: 50%; background: rgba(31, 111, 235, 0.85); border: none; color: #fff; font-size: 22px; cursor: pointer; z-index: 10; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+        .voice-overlay-btn:active { transform: scale(0.92); }
+        .voice-overlay-btn.listening { background: var(--red); animation: pulse-ring 1.5s infinite; }
+        @keyframes pulse-ring { 0% { box-shadow: 0 0 0 0 rgba(248,81,73,0.5); } 70% { box-shadow: 0 0 0 12px rgba(248,81,73,0); } 100% { box-shadow: 0 0 0 0 rgba(248,81,73,0); } }
+
+        /* PTZ */
+        .ptz-controls { display: flex; align-items: center; justify-content: center; gap: 16px; padding: 8px 12px; background: var(--bg2); }
+        .ptz-dpad { display: grid; grid-template-columns: repeat(3, 40px); grid-template-rows: repeat(3, 36px); gap: 4px; }
+        .ptz-btn { background: var(--bg3); border: 1px solid var(--border); color: var(--text); border-radius: var(--radius); font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+        .ptz-btn:active { background: var(--accent2); }
+        .ptz-btn.center { grid-column: 2; grid-row: 2; border-radius: 50%; }
+        .ptz-zoom { display: flex; flex-direction: column; gap: 4px; }
+        .ptz-btn.zoom { width: 40px; height: 36px; font-size: 13px; }
+
+        /* Quick actions */
+        .quick-actions { display: flex; gap: 6px; padding: 8px 12px; overflow-x: auto; background: var(--bg2); border-top: 1px solid var(--border); -webkit-overflow-scrolling: touch; }
+        .quick-actions::-webkit-scrollbar { display: none; }
+        .action-btn { flex-shrink: 0; background: var(--bg3); border: 1px solid var(--border); color: var(--text); border-radius: var(--radius); padding: 8px 14px; font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap; }
+        .action-btn:active { background: var(--accent2); border-color: var(--accent2); }
+
+        /* Bottom nav */
+        .bottom-nav { display: flex; background: var(--bg2); border-top: 1px solid var(--border); padding-bottom: var(--safe-bottom); }
+        .nav-btn { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 4px 6px; background: none; border: none; color: var(--text2); font-size: 10px; cursor: pointer; }
+        .nav-btn.active { color: var(--accent); }
+        .nav-icon { font-size: 18px; }
+
+        /* Panels */
+        .panel-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; background: var(--bg2); border-bottom: 1px solid var(--border); }
+        .panel-header h2 { font-size: 17px; }
+        .btn-close { background: none; border: none; color: var(--text2); font-size: 20px; cursor: pointer; padding: 4px 8px; }
+        .panel-content { flex: 1; overflow-y: auto; padding: 16px; }
+        .panel-tabs { display: flex; border-bottom: 1px solid var(--border); background: var(--bg2); }
+        .panel-tab { flex: 1; padding: 10px; background: none; border: none; border-bottom: 2px solid transparent; color: var(--text2); font-size: 13px; cursor: pointer; }
+        .panel-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+        /* Settings */
+        .settings-section { margin-bottom: 20px; }
+        .settings-section h3 { font-size: 14px; margin-bottom: 10px; color: var(--text); }
+        .setting-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+        .setting-row label { font-size: 12px; color: var(--text2); font-weight: 500; }
+        .setting-row input, .setting-row select, .setting-row textarea {
+            background: var(--bg3); border: 1px solid var(--border); border-radius: var(--radius);
+            padding: 10px 12px; color: var(--test); font-size: 14px; outline: none; color: var(--text);
+        }
+        .setting-row input:focus, .setting-row select:focus { border-color: var(--accent); }
+        .setting-hint { font-size: 11px; color: var(--text2); }
+        .input-with-btn { display: flex; gap: 6px; }
+        .input-with-btn input { flex: 1; }
+        .btn-check { background: var(--bg3); border: 1px solid var(--border); color: var(--text); border-radius: var(--radius); padding: 8px 12px; cursor: pointer; }
+        .toggle { position: relative; display: inline-block; width: 44px; height: 24px; }
+        .toggle input { opacity: 0; width: 0; height: 0; }
+        .toggle-slider { position: absolute; inset: 0; background: var(--bg3); border: 1px solid var(--border); border-radius: 12px; cursor: pointer; transition: 0.2s; }
+        .toggle-slider::before { content: ''; position: absolute; width: 18px; height: 18px; left: 2px; bottom: 2px; background: var(--text2); border-radius: 50%; transition: 0.2s; }
+        .toggle input:checked + .toggle-slider { background: var(--accent2); border-color: var(--accent2); }
+        .toggle input:checked + .toggle-slider::before { transform: translateX(20px); background: #fff; }
+        .mode-selector { display: flex; gap: 8px; }
+        .mode-option { flex: 1; display: flex; align-items: center; gap: 10px; padding: 12px; background: var(--bg3); border: 2px solid var(--border); border-radius: var(--radius); cursor: pointer; }
+        .mode-option.active { border-color: var(--accent2); background: rgba(31, 111, 235, 0.1); }
+        .mode-option-icon { font-size: 24px; }
+        .mode-option-info strong { font-size: 13px; }
+        .mode-option-info p { font-size: 11px; color: var(--text2); margin-top: 2px; }
+        .notif-channels { display: flex; flex-direction: column; gap: 16px; }
+        .notif-channel { background: var(--bg3); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; }
+        .notif-channel h4 { font-size: 13px; margin-bottom: 10px; }
+        .settings-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 20px; padding-bottom: 16px; }
+
+        /* Provider selector */
+        .provider-list { display: flex; flex-direction: column; gap: 10px; }
+        .provider-card { background: var(--bg3); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px; }
+        .provider-card.active-provider { border-color: var(--accent2); }
+        .provider-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+        .provider-header strong { font-size: 13px; }
+        .provider-fields { display: flex; flex-direction: column; gap: 8px; }
+        .provider-fields input, .provider-fields select { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px; color: var(--text); font-size: 13px; outline: none; }
+        .provider-fields input:focus { border-color: var(--accent); }
+        .provider-actions { display: flex; gap: 6px; margin-top: 6px; }
+        .btn-test-provider { background: var(--green); color: #fff; border: none; border-radius: var(--radius); padding: 6px 14px; font-size: 12px; cursor: pointer; font-weight: 600; }
+        .btn-test-provider:active { opacity: 0.8; }
+        .provider-status { font-size: 11px; padding: 4px 0; }
+        .provider-status.ok { color: var(--green); }
+        .provider-status.err { color: var(--red); }
+
+        /* STT section */
+        .stt-option { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: var(--bg2); border: 2px solid var(--border); border-radius: var(--radius); cursor: pointer; margin-bottom: 6px; }
+        .stt-option.active { border-color: var(--accent2); }
+        .stt-option input[type="radio"] { accent-color: var(--accent2); }
+
+        /* Chat */
+        .chat-container { display: flex; flex-direction: column; height: 100%; }
+        .chat-messages { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+        .chat-msg { max-width: 85%; padding: 10px 14px; border-radius: 12px; font-size: 13px; line-height: 1.45; }
+        .chat-msg.system { align-self: flex-start; background: var(--bg3); color: var(--text2); }
+        .chat-msg.user { align-self: flex-end; background: var(--accent2); color: #fff; }
+        .chat-msg.ai { align-self: flex-start; background: var(--bg3); }
+        .chat-input-area { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border); background: var(--bg2); }
+        .chat-input-area input { flex: 1; background: var(--bg3); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; color: var(--text); font-size: 14px; outline: none; }
+        .chat-input-area input:focus { border-color: var(--accent); }
+        .voice-btn { background: var(--bg3); border: 1px solid var(--border); color: var(--text); width: 40px; height: 40px; border-radius: 50%; font-size: 16px; cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+        .voice-btn:active { background: var(--accent2); }
+        .send-btn { background: var(--accent2); border: none; color: #fff; width: 40px; height: 40px; border-radius: 50%; font-size: 16px; cursor: pointer; flex-shrink: 0; }
+
+        /* Agents */
+        .agent-section { margin-bottom: 24px; }
+        .agent-section h3 { font-size: 15px; margin-bottom: 4px; }
+        .agent-desc { font-size: 12px; color: var(--text2); margin-bottom: 12px; }
+        .agent-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-bottom: 12px; }
+        .agent-card-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+        .agent-icon { font-size: 24px; }
+        .agent-status { font-size: 11px; color: var(--text2); display: block; }
+        .agent-status.online { color: var(--green); }
+        .agent-config pre { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; font-size: 11px; overflow-x: auto; margin: 6px 0; color: var(--text); }
+        .agent-tools { margin-top: 10px; }
+        .agent-tools h4, .agent-resources h4 { font-size: 12px; margin-bottom: 6px; color: var(--text2); }
+        .tool-grid { display: flex; flex-wrap: wrap; gap: 4px; }
+        .tool-badge { font-size: 10px; padding: 3px 8px; background: var(--bg3); border: 1px solid var(--border); border-radius: 4px; color: var(--accent); font-family: monospace; }
+        .tool-badge.resource { color: var(--purple); }
+        .api-endpoints { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; }
+        .api-endpoint { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 6px 8px; background: var(--bg); border-radius: var(--radius); }
+        .method { font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 3px; text-transform: uppercase; }
+        .method.get { background: rgba(63, 185, 80, 0.2); color: var(--green); }
+        .method.post { background: rgba(88, 166, 255, 0.2); color: var(--accent); }
+        .api-endpoint code { font-family: monospace; color: var(--accent); font-size: 11px; }
+        .api-endpoint span:last-child { color: var(--text2); margin-left: auto; font-size: 11px; }
+        .api-example { margin-top: 10px; }
+        .api-example label { font-size: 11px; color: var(--text2); display: block; margin-bottom: 4px; }
+        .api-example pre { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; font-size: 11px; overflow-x: auto; color: var(--text); }
+        .btn-copy { background: var(--bg3); border: 1px solid var(--border); color: var(--text2); border-radius: var(--radius); padding: 4px 10px; font-size: 11px; cursor: pointer; margin-top: 4px; }
+        .config-files { display: flex; flex-direction: column; gap: 6px; }
+        .config-file { display: flex; align-items: center; gap: 8px; background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; font-size: 12px; }
+        .config-path { font-family: monospace; color: var(--accent); font-size: 11px; }
+
+        /* Recordings */
+        .storage-info { display: flex; justify-content: space-between; padding: 10px 0; font-size: 13px; color: var(--text2); }
+        .recordings-list { display: flex; flex-direction: column; gap: 8px; }
+        .empty-state { text-align: center; color: var(--text2); padding: 40px 0; }
+
+        /* Modals */
+        .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 200; display: flex; align-items: center; justify-content: center; padding: 24px; }
+        .modal.hidden { display: none; }
+        .modal-content { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 20px; width: 100%; max-width: 360px; }
+        .modal-content h3 { margin-bottom: 12px; font-size: 16px; }
+        .modal-content textarea { width: 100%; background: var(--bg3); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px; color: var(--text); font-size: 14px; resize: vertical; outline: none; }
+        .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+        .snapshot-img { width: 100%; border-radius: var(--radius); margin-bottom: 8px; }
+
+        /* Toast */
+        .toast { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); background: var(--bg2); border: 1px solid var(--border); color: var(--text); padding: 10px 20px; border-radius: var(--radius); font-size: 13px; z-index: 300; box-shadow: 0 4px 12px rgba(0,0,0,0.4); max-width: 90%; text-align: center; }
+
+        /* Responsive */
+        @media (max-width: 360px) {
+            .mode-selector { flex-direction: column; }
+            .quick-actions { gap: 4px; }
+            .action-btn { padding: 6px 10px; font-size: 11px; }
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <!-- Auth Screen -->
+        <div id="auth-screen" class="screen active">
+            <div class="auth-container">
+                <div class="logo">
+                    <div class="logo-icon">📷</div>
+                    <h1>EYEPLUS</h1>
+                    <p>Camera AI System</p>
+                </div>
+                <form id="auth-form" class="auth-form">
+                    <input type="email" id="auth-email" placeholder="Email" required>
+                    <input type="password" id="auth-password" placeholder="Heslo" required>
+                    <button type="submit" class="btn-primary">Přihlásit se</button>
+                    <button type="button" id="auth-register" class="btn-secondary">Registrovat</button>
+                </form>
+                <div class="auth-divider">nebo</div>
+                <button id="auth-skip" class="btn-text">Pokračovat bez účtu</button>
+            </div>
+        </div>
+
+        <!-- Main App -->
+        <div id="main-screen" class="screen">
+            <!-- Top Bar -->
+            <header class="top-bar">
+                <div class="top-left">
+                    <span class="app-title">EYEPLUS</span>
+                    <span id="camera-status" class="status-badge offline">OFFLINE</span>
+                </div>
+                <div class="top-right">
+                    <div class="mode-switch" id="mode-switch">
+                        <button class="mode-btn active" data-mode="local" title="Lokální režim">
+                            <span class="mode-icon">🏠</span>
+                        </button>
+                        <button class="mode-btn" data-mode="online" title="Online režim (VPS)">
+                            <span class="mode-icon">☁️</span>
+                        </button>
+                    </div>
+                    <button id="btn-record" class="icon-btn" title="Nahrávat">⏺</button>
+                    <button id="btn-settings" class="icon-btn" title="Nastavení">⚙</button>
+                </div>
+            </header>
+
+            <!-- Mode Indicator -->
+            <div id="mode-bar" class="mode-bar local">
+                <span id="mode-text">🏠 LOKÁLNÍ - Připojeno přímo ke kameře</span>
+            </div>
+
+            <!-- Video Feed -->
+            <div id="video-container" class="video-container">
+                <canvas id="video-canvas"></canvas>
+                <video id="video-element" class="hidden" autoplay muted playsinline></video>
+                <div id="video-placeholder" class="video-placeholder">
+                    <div class="placeholder-icon">📷</div>
+                    <p>Připojte kameru přes Termux gateway</p>
+                    <p class="placeholder-sub" id="placeholder-hint">Lokální režim: kamera musí být ve stejné WiFi</p>
+                </div>
+                <div id="motion-alert" class="motion-alert hidden">
+                    <span>⚠️ DETEKCE POHYBU</span>
+                    <span class="motion-time" id="motion-time"></span>
+                </div>
+                <div id="rec-indicator" class="rec-indicator hidden">
+                    <span class="rec-dot"></span>
+                    <span id="rec-timer">00:00</span>
+                </div>
+                <div id="ptz-touch-zone" class="ptz-touch-zone"></div>
+                <!-- Voice command button overlay -->
+                <button id="btn-voice-command" class="voice-overlay-btn" title="Hlasový příkaz">🎤</button>
+            </div>
+
+            <!-- PTZ Controls -->
+            <div class="ptz-controls">
+                <div class="ptz-dpad">
+                    <button class="ptz-btn up" data-pan="0" data-tilt="-1">▲</button>
+                    <button class="ptz-btn left" data-pan="-1" data-tilt="0">◀</button>
+                    <button class="ptz-btn center" id="ptz-home">⊙</button>
+                    <button class="ptz-btn right" data-pan="1" data-tilt="0">▶</button>
+                    <button class="ptz-btn down" data-pan="0" data-tilt="1">▼</button>
+                </div>
+                <div class="ptz-zoom">
+                    <button class="ptz-btn zoom" data-zoom="1">🔍+</button>
+                    <button class="ptz-btn zoom" data-zoom="-1">🔍-</button>
+                </div>
+            </div>
+
+            <!-- Quick Actions -->
+            <div class="quick-actions">
+                <button class="action-btn" id="btn-snapshot">📸 Snímek</button>
+                <button class="action-btn" id="btn-speak">🔊 Mluvit</button>
+                <button class="action-btn" id="btn-ai-analyze">🤖 Analyzovat</button>
+                <button class="action-btn" id="btn-speak-camera">🎙 Mluvit přes kameru</button>
+                <button class="action-btn" id="btn-cloud-upload" title="Uložit do cloud">☁️ Cloud</button>
+                <button class="action-btn" id="btn-save-phone" title="Uložit do telefonu">💾 Telefon</button>
+            </div>
+
+            <!-- Bottom Navigation -->
+            <nav class="bottom-nav">
+                <button class="nav-btn active" data-tab="live">
+                    <span class="nav-icon">📹</span>
+                    <span>Živě</span>
+                </button>
+                <button class="nav-btn" data-tab="recordings">
+                    <span class="nav-icon">🎞</span>
+                    <span>Záznamy</span>
+                </button>
+                <button class="nav-btn" data-tab="ai">
+                    <span class="nav-icon">🤖</span>
+                    <span>AI Chat</span>
+                </button>
+                <button class="nav-btn" data-tab="settings">
+                    <span class="nav-icon">⚙</span>
+                    <span>Nastavení</span>
+                </button>
+                <button class="nav-btn" data-tab="agents">
+                    <span class="nav-icon">🔗</span>
+                    <span>Agenti</span>
+                </button>
+            </nav>
+        </div>
+
+        <!-- Recordings Panel -->
+        <div id="recordings-panel" class="panel hidden">
+            <div class="panel-header">
+                <h2>Záznamy</h2>
+                <button class="btn-close" data-close="recordings-panel">✕</button>
+            </div>
+            <div class="panel-tabs">
+                <button class="panel-tab active" data-subtab="motion-recordings">Pohyb</button>
+                <button class="panel-tab" data-subtab="all-recordings">Všechny</button>
+            </div>
+            <div class="panel-content">
+                <div class="storage-info" id="storage-info">
+                    <span>💾 <span id="storage-count">0</span> záznamů</span>
+                    <span id="storage-size">0 MB</span>
+                </div>
+                <div id="recordings-list" class="recordings-list">
+                    <p class="empty-state">Zatím žádné záznamy</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- AI Chat Panel -->
+        <div id="ai-panel" class="panel hidden">
+            <div class="panel-header">
+                <h2>🤖 AI Asistent</h2>
+                <button class="btn-close" data-close="ai-panel">✕</button>
+            </div>
+            <div class="chat-container">
+                <div id="chat-messages" class="chat-messages">
+                    <div class="chat-msg system">
+                        <p>Ahoj! Jsem AI asistent pro vaši kameru EYEPLUS. Můžu popsat co vidím, pomoct s ovládáním nebo odpovědět na otázky. Vyberte poskytovatele AI v Nastavení.</p>
+                    </div>
+                </div>
+                <div class="chat-input-area">
+                    <button id="btn-voice" class="voice-btn" title="Hlasový vstup">🎤</button>
+                    <input type="text" id="chat-input" placeholder="Napište zprávu..." autocomplete="off">
+                    <button id="btn-send" class="send-btn">➤</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Agents Panel -->
+        <div id="agents-panel" class="panel hidden">
+            <div class="panel-header">
+                <h2>🔗 AI Agenti</h2>
+                <button class="btn-close" data-close="agents-panel">✕</button>
+            </div>
+            <div class="panel-content">
+                <!-- Multi-Provider AI API -->
+                <div class="agent-section">
+                    <h3>🧠 Multi-Provider AI API</h3>
+                    <p class="agent-desc">Podpora více poskytovatelů AI. Přepínejte mezi nimi v Nastavení &rarr; AI Poskytovatelé.</p>
+                    <div class="agent-card">
+                        <div class="agent-card-header">
+                            <span class="agent-icon">🔀</span>
+                            <div>
+                                <strong>Fallback řetězec</strong>
+                                <span class="agent-status" id="agent-provider-status">Automatické přepínání při selhání</span>
+                            </div>
+                        </div>
+                        <div class="agent-config">
+                            <label>Konfigurace poskytovatelů (Nastavení &rarr; AI):</label>
+                            <pre id="agent-provider-config">{
+  "providers": ["openrouter", "groq", "openai", "anthropic"],
+  "fallback": true,
+  "retry": 2
+}</pre>
+                            <button class="btn-copy" onclick="navigator.clipboard.writeText(document.getElementById('agent-provider-config').textContent)">Kopírovat</button>
+                        </div>
+                        <div class="agent-tools">
+                            <h4>Poctupné AI modely:</h4>
+                            <div class="tool-grid">
+                                <span class="tool-badge">openrouter/llama-3.2</span>
+                                <span class="tool-badge">openrouter/gemma-2</span>
+                                <span class="tool-badge">groq/llama-3.3</span>
+                                <span class="tool-badge">groq/mixtral</span>
+                                <span class="tool-badge">openai/gpt-4o-mini</span>
+                                <span class="tool-badge">anthropic/claude-3.5</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="agent-section">
+                    <h3>MCP Server (doporučeno)</h3>
+                    <p class="agent-desc">Model Context Protocol - standardní rozhraní pro AI agenty jako OpenCode, Claude, Cursor, Windsurf.</p>
+                    <div class="agent-card">
+                        <div class="agent-card-header">
+                            <span class="agent-icon">🤖</span>
+                            <div>
+                                <strong>EYEPLUS MCP Server</strong>
+                                <span class="agent-status online" id="mcp-status">Běží na portu 8766</span>
+                            </div>
+                        </div>
+                        <div class="agent-config">
+                            <label>Pro OpenCode / Claude Desktop:</label>
+                            <pre id="mcp-config-openai">{
+  "mcpServers": {
+    "eyeplus": {
+      "url": "http://localhost:8766/sse"
+    }
+  }
+}</pre>
+                            <button class="btn-copy" onclick="navigator.clipboard.writeText(document.getElementById('mcp-config-openai').textContent)">Kopírovat</button>
+                        </div>
+                        <div class="agent-tools">
+                            <h4>Dostupné nástroje (15):</h4>
+                            <div class="tool-grid">
+                                <span class="tool-badge">camera_get_status</span>
+                                <span class="tool-badge">camera_get_frame</span>
+                                <span class="tool-badge">camera_analyze_scene</span>
+                                <span class="tool-badge">camera_ptz_move</span>
+                                <span class="tool-badge">camera_ptz_stop</span>
+                                <span class="tool-badge">camera_speak</span>
+                                <span class="tool-badge">camera_chat</span>
+                                <span class="tool-badge">camera_start_recording</span>
+                                <span class="tool-badge">camera_stop_recording</span>
+                                <span class="tool-badge">camera_list_recordings</span>
+                                <span class="tool-badge">camera_download_recording</span>
+                                <span class="tool-badge">camera_snapshot</span>
+                                <span class="tool-badge">camera_motion_events</span>
+                                <span class="tool-badge">camera_send_notification</span>
+                                <span class="tool-badge">camera_set_mode</span>
+                            </div>
+                        </div>
+                        <div class="agent-resources">
+                            <h4>Zdroje (4):</h4>
+                            <div class="tool-grid">
+                                <span class="tool-badge resource">eyeplus://status</span>
+                                <span class="tool-badge resource">eyeplus://config</span>
+                                <span class="tool-badge resource">eyeplus://recordings</span>
+                                <span class="tool-badge resource">eyeplus://motion-events</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="agent-section">
+                    <h3>REST API (programaticky)</h3>
+                    <p class="agent-desc">Jednoduché HTTP API pro vlastní skripty a integrace.</p>
+                    <div class="agent-card">
+                        <div class="agent-card-header">
+                            <span class="agent-icon">⚡</span>
+                            <div>
+                                <strong>Agent API</strong>
+                                <span class="agent-status">/api/agent/*</span>
+                            </div>
+                        </div>
+                        <div class="api-endpoints">
+                            <div class="api-endpoint">
+                                <span class="method get">GET</span>
+                                <code>/api/agent/discovery</code>
+                                <span>Objevení schopností</span>
+                            </div>
+                            <div class="api-endpoint">
+                                <span class="method get">GET</span>
+                                <code>/api/agent/status</code>
+                                <span>Stav kamery</span>
+                            </div>
+                            <div class="api-endpoint">
+                                <span class="method post">POST</span>
+                                <code>/api/agent/ptz</code>
+                                <span>PTZ pohyb</span>
+                            </div>
+                            <div class="api-endpoint">
+                                <span class="method post">POST</span>
+                                <code>/api/agent/ptz/stop</code>
+                                <span>Stop PTZ</span>
+                            </div>
+                            <div class="api-endpoint">
+                                <span class="method post">POST</span>
+                                <code>/api/agent/analyze</code>
+                                <span>AI analýza scény</span>
+                            </div>
+                            <div class="api-endpoint">
+                                <span class="method post">POST</span>
+                                <code>/api/agent/chat</code>
+                                <span>Chat s AI</span>
+                            </div>
+                            <div class="api-endpoint">
+                                <span class="method post">POST</span>
+                                <code>/api/agent/speak</code>
+                                <span>TTS přes kameru</span>
+                            </div>
+                            <div class="api-endpoint">
+                                <span class="method get">GET</span>
+                                <code>/api/agent/recordings</code>
+                                <span>Seznam záznamů</span>
+                            </div>
+                            <div class="api-endpoint">
+                                <span class="method post">POST</span>
+                                <code>/api/agent/notify</code>
+                                <span>Poslat notifikaci</span>
+                            </div>
+                            <div class="api-endpoint">
+                                <span class="method post">POST</span>
+                                <code>/api/agent/execute</code>
+                                <span>Generic execute</span>
+                            </div>
+                            <div class="api-endpoint">
+                                <span class="method get">GET</span>
+                                <code>/api/agent/tools</code>
+                                <span>Seznam nástrojů</span>
+                            </div>
+                        </div>
+                        <div class="api-example">
+                            <label>Příklad (curl):</label>
+                            <pre>curl -X POST http://YOUR_SERVER:8000/api/agent/ptz \
+  -H "Content-Type: application/json" \
+  -d '{"pan": 0.5, "tilt": -0.3}'</pre>
+                            <button class="btn-copy" onclick="navigator.clipboard.writeText(this.previousElementSibling.textContent)">Kopírovat</button>
+                        </div>
+                        <div class="api-example">
+                            <label>Příklad (Python):</label>
+                            <pre>import httpx
+r = httpx.post("http://YOUR_SERVER:8000/api/agent/execute",
+    json={"action": "ptz", "params": {"pan": 0.5}})
+print(r.json())</pre>
+                            <button class="btn-copy" onclick="navigator.clipboard.writeText(this.previousElementSibling.textContent)">Kopírovat</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="agent-section">
+                    <h3>WebSocket (real-time stream)</h3>
+                    <p class="agent-desc">Připojte se na WebSocket pro real-time video a ovládání.</p>
+                    <div class="agent-card">
+                        <div class="agent-card-header">
+                            <span class="agent-icon">📡</span>
+                            <div>
+                                <strong>Live Stream WebSocket</strong>
+                                <span class="agent-status">ws://SERVER:8000/ws/stream</span>
+                            </div>
+                        </div>
+                        <div class="api-example">
+                            <label>Připojení (JavaScript):</label>
+                            <pre>const ws = new WebSocket("ws://SERVER:8000/ws/stream");
+ws.onmessage = (e) => {
+  const data = JSON.parse(e.data);
+  if (data.type === "frame") {
+    img.src = "data:image/jpeg;base64," + data.data;
+  }
+  if (data.type === "motion_detected") {
+    console.log("Pohyb!", data);
+  }
+};
+ws.send(JSON.stringify({type:"ptz_move", pan:0.5, tilt:0}));
+ws.send(JSON.stringify({type:"ptz_stop"}));</pre>
+                            <button class="btn-copy" onclick="navigator.clipboard.writeText(this.previousElementSibling.textContent)">Kopírovat</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="agent-section">
+                    <h3>Konfigurace pro aplikace</h3>
+                    <div class="config-files">
+                        <div class="config-file">
+                            <strong>OpenCode</strong>
+                            <span class="config-path">opencode-mcp.json</span>
+                            <button class="btn-copy" onclick="navigator.clipboard.writeText(JSON.stringify({mcpServers:{eyeplus:{url:'http://localhost:8766/sse'}}},null,2))">Kopírovat</button>
+                        </div>
+                        <div class="config-file">
+                            <strong>Claude Desktop</strong>
+                            <span class="config-path">claude-mcp.json</span>
+                            <button class="btn-copy" onclick="navigator.clipboard.writeText(JSON.stringify({mcpServers:{eyeplus:{url:'http://localhost:8766/sse'}}},null,2))">Kopírovat</button>
+                        </div>
+                        <div class="config-file">
+                            <strong>Cursor / Windsurf</strong>
+                            <span class="config-path">cursor-mcp.json</span>
+                            <button class="btn-copy" onclick="navigator.clipboard.writeText(JSON.stringify({mcpServers:{eyeplus:{url:'http://localhost:8766/sse'}}},null,2))">Kopírovat</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Settings Panel -->
+        <div id="settings-panel" class="panel hidden">
+            <div class="panel-header">
+                <h2>Nastavení</h2>
+                <button class="btn-close" data-close="settings-panel">✕</button>
+            </div>
+            <div class="panel-content settings-content">
+
+                <!-- Connection Mode -->
+                <div class="settings-section">
+                    <h3>🔌 Režim připojení</h3>
+                    <div class="mode-selector">
+                        <div class="mode-option active" data-select-mode="local">
+                            <div class="mode-option-icon">🏠</div>
+                            <div class="mode-option-info">
+                                <strong>Lokální</strong>
+                                <p>Přímo ke kameře, bez VPS. Nahrávání do telefonu.</p>
+                            </div>
+                        </div>
+                        <div class="mode-option" data-select-mode="online">
+                            <div class="mode-option-icon">☁️</div>
+                            <div class="mode-option-info">
+                                <strong>Online (VPS)</strong>
+                                <p>Přes Termux gateway → VPS. Přístup odkudkoliv.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- AI Providers -->
+                <div class="settings-section">
+                    <h3>🧠 AI Poskytovatelé</h3>
+                    <p class="setting-hint" style="margin-bottom:10px;">Vyberte a nakonfigurujte poskytovatele AI. První aktivní bude primární, ostatní jako fallback.</p>
+                    <div class="provider-list" id="provider-list">
+
+                        <!-- OpenRouter -->
+                        <div class="provider-card active-provider" data-provider="openrouter">
+                            <div class="provider-header">
+                                <strong>OpenRouter</strong>
+                                <label class="toggle"><input type="radio" name="active-provider" value="openrouter" checked><span class="toggle-slider"></span></label>
+                            </div>
+                            <div class="provider-fields">
+                                <input type="password" id="set-or-key" placeholder="API Key (sk-or-...)">
+                                <select id="set-or-model">
+                                    <option value="meta-llama/llama-3.2-3b-instruct:free">Llama 3.2 3B (free)</option>
+                                    <option value="meta-llama/llama-3.3-70b-instruct:free">Llama 3.3 70B (free)</option>
+                                    <option value="google/gemma-2-9b-it:free">Gemma 2 9B (free)</option>
+                                    <option value="mistralai/mistral-7b-instruct:free">Mistral 7B (free)</option>
+                                    <option value="qwen/qwen-2.5-72b-instruct:free">Qwen 2.5 72B (free)</option>
+                                    <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
+                                    <option value="openai/gpt-4o-mini">GPT-4o Mini</option>
+                                    <option value="openai/gpt-4o">GPT-4o</option>
+                                </select>
+                                <div class="provider-actions">
+                                    <button class="btn-test-provider" data-test="openrouter">Otestovat</button>
+                                </div>
+                                <div class="provider-status" id="status-openrouter"></div>
+                            </div>
+                        </div>
+
+                        <!-- Groq -->
+                        <div class="provider-card" data-provider="groq">
+                            <div class="provider-header">
+                                <strong>Groq</strong>
+                                <label class="toggle"><input type="radio" name="active-provider" value="groq"><span class="toggle-slider"></span></label>
+                            </div>
+                            <div class="provider-fields">
+                                <input type="password" id="set-groq-key" placeholder="API Key (gsk_...)">
+                                <select id="set-groq-model">
+                                    <option value="llama-3.3-70b-versatile">Llama 3.3 70B Versatile</option>
+                                    <option value="llama-3.1-8b-instant">Llama 3.1 8B Instant</option>
+                                    <option value="mixtral-8x7b-32768">Mixtral 8x7B</option>
+                                    <option value="gemma2-9b-it">Gemma2 9B IT</option>
+                                </select>
+                                <div class="provider-actions">
+                                    <button class="btn-test-provider" data-test="groq">Otestovat</button>
+                                </div>
+                                <div class="provider-status" id="status-groq"></div>
+                            </div>
+                        </div>
+
+                        <!-- OpenAI -->
+                        <div class="provider-card" data-provider="openai">
+                            <div class="provider-header">
+                                <strong>OpenAI</strong>
+                                <label class="toggle"><input type="radio" name="active-provider" value="openai"><span class="toggle-slider"></span></label>
+                            </div>
+                            <div class="provider-fields">
+                                <input type="password" id="set-openai-key" placeholder="API Key (sk-...)">
+                                <select id="set-openai-model">
+                                    <option value="gpt-4o-mini">GPT-4o Mini</option>
+                                    <option value="gpt-4o">GPT-4o</option>
+                                    <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                                    <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+                                </select>
+                                <div class="provider-actions">
+                                    <button class="btn-test-provider" data-test="openai">Otestovat</button>
+                                </div>
+                                <div class="provider-status" id="status-openai"></div>
+                            </div>
+                        </div>
+
+                        <!-- Anthropic -->
+                        <div class="provider-card" data-provider="anthropic">
+                            <div class="provider-header">
+                                <strong>Anthropic</strong>
+                                <label class="toggle"><input type="radio" name="active-provider" value="anthropic"><span class="toggle-slider"></span></label>
+                            </div>
+                            <div class="provider-fields">
+                                <input type="password" id="set-anthropic-key" placeholder="API Key (sk-ant-...)">
+                                <select id="set-anthropic-model">
+                                    <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
+                                    <option value="claude-3-5-haiku-20241022">Claude 3.5 Haiku</option>
+                                    <option value="claude-3-opus-20240229">Claude 3 Opus</option>
+                                </select>
+                                <div class="provider-actions">
+                                    <button class="btn-test-provider" data-test="anthropic">Otestovat</button>
+                                </div>
+                                <div class="provider-status" id="status-anthropic"></div>
+                            </div>
+                        </div>
+
+                        <!-- Cloudflare Workers AI -->
+                        <div class="provider-card" data-provider="cloudflare">
+                            <div class="provider-header">
+                                <strong>Cloudflare Workers AI</strong>
+                                <label class="toggle"><input type="radio" name="active-provider" value="cloudflare"><span class="toggle-slider"></span></label>
+                            </div>
+                            <div class="provider-fields">
+                                <input type="password" id="set-cf-key" placeholder="API Token">
+                                <input type="text" id="set-cf-account" placeholder="Cloudflare Account ID">
+                                <select id="set-cf-model">
+                                    <option value="@cf/meta/llama-3.3-70b-instruct-fp8">Llama 3.3 70B FP8</option>
+                                    <option value="@cf/meta/llama-3.1-8b-instruct">Llama 3.1 8B</option>
+                                    <option value="@cf/qwen/qwen1.5-14b-chat-awq">Qwen 1.5 14B</option>
+                                    <option value="@cf/mistral/mistral-7b-instruct-v0.2-lora">Mistral 7B</option>
+                                </select>
+                                <div class="provider-actions">
+                                    <button class="btn-test-provider" data-test="cloudflare">Otestovat</button>
+                                </div>
+                                <div class="provider-status" id="status-cloudflare"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- STT Settings -->
+                <div class="settings-section">
+                    <h3>🎙 Rozpoznávání řeči (STT)</h3>
+                    <div class="stt-option active" data-stt="groq">
+                        <input type="radio" name="stt-provider" value="groq" checked>
+                        <div>
+                            <strong style="font-size:13px;">Groq Whisper</strong>
+                            <p style="font-size:11px;color:var(--text2);">Rychlé, zdarma, běží na Groq infrastruktuře</p>
+                        </div>
+                    </div>
+                    <div class="stt-option" data-stt="openrouter">
+                        <input type="radio" name="stt-provider" value="openrouter">
+                        <div>
+                            <strong style="font-size:13px;">OpenRouter Whisper</strong>
+                            <p style="font-size:11px;color:var(--text2);">Přes OpenRouter API, používá váš API key</p>
+                        </div>
+                    </div>
+                    <div class="setting-row" style="margin-top:8px;">
+                        <label>Jazyk rozpoznávání</label>
+                        <select id="set-stt-lang">
+                            <option value="cs">Čeština</option>
+                            <option value="en">English</option>
+                            <option value="auto">Automaticky</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- TTS Settings -->
+                <div class="settings-section">
+                    <h3>🔊 Text na řeč (TTS)</h3>
+                    <div class="setting-row">
+                        <label>Hlas</label>
+                        <select id="set-tts-voice">
+                            <option value="cs-CZ-AntoninNeural">Antonín (CZ muž)</option>
+                            <option value="cs-CZ-VlastaNeural">Vlasta (CZ žena)</option>
+                            <option value="en-US-GuyNeural">Guy (EN muž)</option>
+                            <option value="en-US-JennyNeural">Jenny (EN žena)</option>
+                            <option value="sk-SK-LukasNeural">Lukáš (SK muž)</option>
+                            <option value="sk-SK-ViktoriaNeural">Viktória (SK žena)</option>
+                        </select>
+                    </div>
+                    <div class="setting-row">
+                        <label>Rychlost řeči</label>
+                        <select id="set-tts-speed">
+                            <option value="0.8">Pomalejší</option>
+                            <option value="1.0" selected>Normální</option>
+                            <option value="1.2">Rychlejší</option>
+                            <option value="1.5">Rychlý</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Camera Settings -->
+                <div class="settings-section">
+                    <h3>📷 Kamera</h3>
+                    <div class="setting-row">
+                        <label>IP adresa kamery</label>
+                        <div class="input-with-btn">
+                            <input type="text" id="set-cam-ip" placeholder="172.20.94.172">
+                            <button class="btn-check" id="btn-check-camera" title="Ověřit připojení">🔄</button>
+                        </div>
+                        <span class="setting-hint" id="cam-check-result"></span>
+                    </div>
+                    <div class="setting-row">
+                        <label>Uživatel</label>
+                        <input type="text" id="set-cam-user" value="admin">
+                    </div>
+                    <div class="setting-row">
+                        <label>Heslo</label>
+                        <input type="password" id="set-cam-pass" value="admin">
+                    </div>
+                    <div class="setting-row">
+                        <label>RTSP port</label>
+                        <input type="number" id="set-cam-rtsp-port" value="554">
+                    </div>
+                </div>
+
+                <!-- Local Recording -->
+                <div class="settings-section">
+                    <h3>💾 Lokální nahrávání</h3>
+                    <div class="setting-row">
+                        <label>Auto-nahrávání při pohybu</label>
+                        <label class="toggle">
+                            <input type="checkbox" id="set-auto-record" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                    <div class="setting-row">
+                        <label>Délka záznamu (sekundy)</label>
+                        <input type="number" id="set-record-duration" value="30" min="5" max="300">
+                    </div>
+                    <div class="setting-row">
+                        <label>Citlivost pohybu</label>
+                        <select id="set-motion-sensitivity">
+                            <option value="low">Nízká (jen velké změny)</option>
+                            <option value="medium" selected>Střední</option>
+                            <option value="high">Vysoká (cokoliv)</option>
+                        </select>
+                    </div>
+                    <div class="setting-row">
+                        <label>Ukládat záznamy do</label>
+                        <select id="set-save-target">
+                            <option value="phone">Telefon (stahování)</option>
+                            <option value="server">Server (dočasné)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- VPS Settings -->
+                <div class="settings-section" id="vps-settings">
+                    <h3>☁️ VPS (Online režim)</h3>
+                    <div class="setting-row">
+                        <label>VPS URL</label>
+                        <input type="text" id="set-vps-url" placeholder="wss://vase-domena.cz/ws/gateway">
+                    </div>
+                    <div class="setting-row">
+                        <label>Gateway Secret</label>
+                        <input type="password" id="set-gateway-secret" placeholder="gateway-secret">
+                    </div>
+                    <div class="setting-row">
+                        <label>Stav gateway</label>
+                        <span id="gateway-status">Odpojeno</span>
+                    </div>
+                </div>
+
+                <!-- Notifications -->
+                <div class="settings-section">
+                    <h3>🔔 Notifikace</h3>
+                    <div class="notif-channels">
+                        <div class="notif-channel">
+                            <h4>📱 Telegram</h4>
+                            <div class="setting-row">
+                                <input type="password" id="set-tg-token" placeholder="Bot Token">
+                            </div>
+                            <div class="setting-row">
+                                <input type="text" id="set-tg-chat" placeholder="Chat ID">
+                            </div>
+                            <button class="btn-secondary btn-sm" id="btn-test-telegram">Test</button>
+                        </div>
+                        <div class="notif-channel">
+                            <h4>📧 Email (Gmail)</h4>
+                            <div class="setting-row">
+                                <input type="email" id="set-email-user" placeholder="vas.email@gmail.com">
+                            </div>
+                            <div class="setting-row">
+                                <input type="password" id="set-email-pass" placeholder="App Password">
+                            </div>
+                            <button class="btn-secondary btn-sm" id="btn-test-email">Test</button>
+                        </div>
+                        <div class="notif-channel">
+                            <h4>💬 WhatsApp Business</h4>
+                            <div class="setting-row">
+                                <input type="password" id="set-wa-token" placeholder="API Token">
+                            </div>
+                            <div class="setting-row">
+                                <input type="text" id="set-wa-phone-id" placeholder="Phone Number ID">
+                            </div>
+                            <div class="setting-row">
+                                <input type="text" id="set-wa-to" placeholder="Číslo příjemce">
+                            </div>
+                            <button class="btn-secondary btn-sm" id="btn-test-whatsapp">Test</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Google Drive -->
+                <div class="settings-section">
+                    <h3>☁️ Google Drive</h3>
+                    <div class="setting-row">
+                        <label>Stav</label>
+                        <span id="gdrive-status">Nenakonfigurováno</span>
+                    </div>
+                    <button class="btn-secondary" id="btn-gdrive-setup">Nastavit Google Drive</button>
+                </div>
+
+                <div class="settings-actions">
+                    <button class="btn-primary" id="btn-save-settings">Uložit nastavení</button>
+                    <button class="btn-danger" id="btn-logout">Odhlásit se</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Speak Modal -->
+        <div id="speak-modal" class="modal hidden">
+            <div class="modal-content">
+                <h3>🔊 Mluvit přes kameru</h3>
+                <textarea id="speak-text" placeholder="Napište text, který chcete přehrát přes reproduktor kamery..." rows="4"></textarea>
+                <div class="modal-actions">
+                    <button class="btn-secondary" data-close="speak-modal">Zrušit</button>
+                    <button class="btn-primary" id="btn-speak-send">Přehrát</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Snapshot Modal -->
+        <div id="snapshot-modal" class="modal hidden">
+            <div class="modal-content">
+                <h3>📸 Snímek z kamery</h3>
+                <img id="snapshot-img" class="snapshot-img" alt="Snímek">
+                <div class="modal-actions">
+                    <button class="btn-secondary" data-close="snapshot-modal">Zavřít</button>
+                    <button class="btn-primary" id="btn-snapshot-download">Stáhnout</button>
+                    <button class="btn-primary" id="btn-snapshot-cloud">Na Cloud</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Voice Command Listening Overlay -->
+        <div id="voice-listening-overlay" class="modal hidden">
+            <div class="modal-content" style="text-align:center;">
+                <div style="font-size:48px;margin-bottom:12px;animation:pulse-ring 1.5s infinite;">🎤</div>
+                <h3>Naslouchám...</h3>
+                <p style="color:var(--text2);font-size:13px;margin-top:6px;">Řekněte svůj příkaz</p>
+                <div id="voice-transcript" style="margin-top:12px;font-size:14px;color:var(--accent);min-height:20px;"></div>
+                <div class="modal-actions" style="justify-content:center;margin-top:16px;">
+                    <button class="btn-secondary" id="btn-voice-cancel">Zrušit</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Toast -->
+        <div id="toast" class="toast hidden"></div>
+    </div>
+
+    <script src="ai-providers.js"></script>
+    <script src="voice-pipeline.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
