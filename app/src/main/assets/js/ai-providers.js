@@ -225,6 +225,20 @@ const PROVIDERS = {
   }
 };
 
+let DEFAULT_API_KEYS = {};
+
+async function loadConfig() {
+  try {
+    const r = await fetch('config.json');
+    if (r.ok) {
+      const cfg = await r.json();
+      if (cfg.api_keys) DEFAULT_API_KEYS = cfg.api_keys;
+    }
+  } catch(e) {}
+}
+
+loadConfig();
+
 const SYSTEM_PROMPT = `Jsi EYES - AI asistent Security kamery EYEPLUS.
 Umis:
 - Popisovat co kamera vidi
@@ -254,7 +268,7 @@ function getActiveModel() {
 
 function getApiKey(provider) {
   const s = getSettings();
-  return s[`${provider}_api_key`] || '';
+  return s[`${provider}_api_key`] || DEFAULT_API_KEYS[provider] || '';
 }
 
 async function chat(messages, opts = {}) {

@@ -288,6 +288,37 @@
         if ($("#btn-check-camera")) {
             $("#btn-check-camera").addEventListener("click", checkCameraIP);
         }
+
+        if ($("#btn-discover-cameras")) {
+            $("#btn-discover-cameras").addEventListener("click", discoverCameras);
+        }
+    }
+
+    async function discoverCameras() {
+        const container = $("#discovered-cameras");
+        if (!container || !window.EyePlusDiscovery) { showToast("ONVIF modul neni dostupny"); return; }
+        container.classList.remove("hidden");
+        container.innerHTML = '<div style="color:var(--text2);padding:8px;">Hledám kamery v síti...</div>';
+
+        try {
+            const cameras = await window.EyePlusDiscovery.discoverCameras();
+            if (cameras.length === 0) {
+                container.innerHTML = '<div style="color:var(--text2);padding:8px;">Žádné kamery nenalezeny. Zkuste zadat IP manuálně.</div>';
+                return;
+            }
+            container.innerHTML = cameras.map(cam =>
+                `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:6px;">
+                    <div>
+                        <strong style="font-size:13px;">${cam.name || 'Kamera'}</strong>
+                        <span style="font-size:12px;color:var(--text2);margin-left:6px;">${cam.ip}</span>
+                        <span style="font-size:10px;color:var(--accent);margin-left:6px;">${cam.source || ''}</span>
+                    </div>
+                    <button class="btn-primary btn-sm" onclick="document.getElementById('set-cam-ip').value='${cam.ip}';showToast('IP nastavena: ${cam.ip}')">Použít</button>
+                </div>`
+            ).join("");
+        } catch (e) {
+            container.innerHTML = `<div style="color:var(--red);padding:8px;">Chyba: ${e.message}</div>`;
+        }
     }
 
     function toggleRecording() {
@@ -1063,6 +1094,30 @@
             const el = $(`#${id}`);
             if (el && s[key]) el.value = s[key];
         }
+
+        const providerKeyMap = {
+            "set-or-key": "openrouter",
+            "set-groq-key": "groq",
+            "set-openai-key": "openai",
+            "set-anthropic-key": "anthropic",
+            "set-cf-key": "cloudflare",
+            "set-hf-key": "huggingface",
+            "set-ds-key": "deepseek",
+            "set-mistral-key": "mistral",
+        };
+        for (const [id, prov] of Object.entries(providerKeyMap)) {
+            const el = $(`#${id}`);
+            if (el) {
+                const saved = s[`${prov}_api_key`];
+                const def = window.EyePlusAI?.PROVIDERS?.[prov] ? (window.EyePlusAI.getApiKey(prov) || "") : "";
+                el.value = saved || def;
+            }
+        }
+
+        if (s.ai_provider) {
+            const radio = $(`input[name="active-provider"][value="${s.ai_provider}"]`);
+            if (radio) radio.checked = true;
+        }
     }
 
     function saveSettings() {
@@ -1089,13 +1144,24 @@
             if (el) s[key] = el.value;
         }
 
-        const providerSelect = $("#set-ai-provider");
-        const modelSelect = $("#set-ai-model-select");
-        const apiKeyInput = $("#set-provider-api-key");
-        if (providerSelect) s.ai_provider = providerSelect.value;
-        if (modelSelect) s.ai_model = modelSelect.value;
-        if (apiKeyInput && providerSelect) {
-            s[`${providerSelect.value}_api_key`] = apiKeyInput.value.trim();
+        const activeRadio = $('input[name="active-provider"]:checked');
+        if (activeRadio) s.ai_provider = activeRadio.value;
+
+        const providerKeyMap = {
+            "set-or-key": "openrouter",
+            "set-groq-key": "groq",
+            "set-openai-key": "openai",
+            "set-anthropic-key": "anthropic",
+            "set-cf-key": "cloudflare",
+            "set-hf-key": "huggingface",
+            "set-ds-key": "deepseek",
+            "set-mistral-key": "mistral",
+        };
+        for (const [id, prov] of Object.entries(providerKeyMap)) {
+            const el = $(`#${id}`);
+            if (el && el.value.trim()) {
+                s[`${prov}_api_key`] = el.value.trim();
+            }
         }
 
         localStorage.setItem("eyeplus_settings", JSON.stringify(s));

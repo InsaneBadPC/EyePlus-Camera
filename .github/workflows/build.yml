@@ -1,0 +1,110 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+
+    - name: Install SDK platforms and build tools
+      run: |
+        sdkmanager "platforms;android-34" "build-tools;34.0.0"
+
+    - name: Inject API keys
+      run: |
+        cat > app/src/main/assets/config.json << 'CONFIGEOF'
+        {
+          "api_keys": {
+            "openrouter": "${{ secrets.OPENROUTER_KEY }}",
+            "groq": "${{ secrets.GROQ_KEY }}",
+            "gemini": "${{ secrets.GEMINI_KEY }}",
+            "deepseek": "${{ secrets.DEEPSEEK_KEY }}",
+            "mistral": "${{ secrets.MISTRAL_KEY }}",
+            "huggingface": "${{ secrets.HF_KEY }}",
+            "nvidia": "${{ secrets.NVIDIA_KEY }}"
+          }
+        }
+        CONFIGEOF
+
+    - name: Build APK
+      run: |
+        SDK=$ANDROID_HOME
+        BT=$SDK/build-tools/34.0.0
+        PLATFORM=$SDK/platforms/android-34/android.jar
+        SRC=app/src/main
+        BUILD=build
+
+        rm -rf $BUILD
+        mkdir -p $BUILD/gen $BUILD/obj/classes $BUILD/staging
+
+        # AAPT2 compile
+        find $SRC/res -name "*.xml" -exec $BT/aapt2 compile {} -o $BUILD/obj/ \;
+        find $SRC/res -name "*.png" -exec $BT/aapt2 compile {} -o $BUILD/obj/ \; 2>/dev/null || true
+
+        # AAPT2 link
+        $BT/aapt2 link -I $PLATFORM \
+            --manifest $SRC/AndroidManifest.xml \
+            --java $BUILD/gen \
+            -A $SRC/assets \
+            -o $BUILD/staging/app-unsigned.apk \
+            $(find $BUILD/obj -name "*.flat")
+
+        # Compile Java
+        find $SRC/java $BUILD/gen -name "*.java" > $BUILD/srcs.txt
+        javac -source 17 -target 17 -classpath $PLATFORM -d $BUILD/obj/classes @$BUILD/srcs.txt
+
+        # DEX
+        find $BUILD/obj/classes -name "*.class" > $BUILD/classes.txt
+        $BT/d8 --output $BUILD/ --lib $PLATFORM @$BUILD/classes.txt
+
+        # Merge dex+assets into APK
+        cd $BUILD/staging
+        unzip -q -o app-unsigned.apk -d extracted
+        cp $BUILD/classes.dex extracted/
+        mkdir -p extracted/assets/css extracted/assets/js
+        cp $SRC/assets/index.html extracted/assets/
+        cp $SRC/assets/css/style.css extracted/assets/css/
+        cp $SRC/assets/js/*.js extracted/assets/js/
+        cp $SRC/assets/config.json extracted/assets/ 2>/dev/null || true
+        cd extracted
+        zip -q -r $BUILD/staging/repackaged.apk .
+        cd ../../..
+
+        # Sign
+        keytool -genkeypair -v -keystore $BUILD/debug.keystore -alias eyeplus \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass android -keypass android \
+            -dname "CN=EyePlus,OU=Dev,O=EyePlus,L=Prague,ST=CR,C=CZ" 2>/dev/null
+
+        $BT/apksigner sign \
+            --ks $BUILD/debug.keystore \
+            --ks-pass pass:android \
+            --key-pass pass:android \
+            --out $BUILD/eyeplus-v1.0.apk \
+            $BUILD/staging/repackaged.apk
+
+        $BT/apksigner verify $BUILD/eyeplus-v1.0.apk
+        echo "BUILD OK"
+
+    - name: Upload APK artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: eyeplus-apk
+        path: build/eyeplus-v1.0.apk

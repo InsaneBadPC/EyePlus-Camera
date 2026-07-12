@@ -767,6 +767,65 @@ ws.send(JSON.stringify({type:"ptz_stop"}));</pre>
                                 <div class="provider-status" id="status-cloudflare"></div>
                             </div>
                         </div>
+
+                        <!-- DeepSeek -->
+                        <div class="provider-card" data-provider="deepseek">
+                            <div class="provider-header">
+                                <strong>DeepSeek</strong>
+                                <label class="toggle"><input type="radio" name="active-provider" value="deepseek"><span class="toggle-slider"></span></label>
+                            </div>
+                            <div class="provider-fields">
+                                <input type="password" id="set-ds-key" placeholder="API Key (sk-...)">
+                                <select id="set-ds-model">
+                                    <option value="deepseek-chat">DeepSeek Chat</option>
+                                    <option value="deepseek-coder">DeepSeek Coder</option>
+                                </select>
+                                <div class="provider-actions">
+                                    <button class="btn-test-provider" data-test="deepseek">Otestovat</button>
+                                </div>
+                                <div class="provider-status" id="status-deepseek"></div>
+                            </div>
+                        </div>
+
+                        <!-- Mistral AI -->
+                        <div class="provider-card" data-provider="mistral">
+                            <div class="provider-header">
+                                <strong>Mistral AI</strong>
+                                <label class="toggle"><input type="radio" name="active-provider" value="mistral"><span class="toggle-slider"></span></label>
+                            </div>
+                            <div class="provider-fields">
+                                <input type="password" id="set-mistral-key" placeholder="API Key">
+                                <select id="set-mistral-model">
+                                    <option value="mistral-tiny-latest">Mistral Tiny</option>
+                                    <option value="mistral-small-latest">Mistral Small</option>
+                                    <option value="mistral-medium-latest">Mistral Medium</option>
+                                </select>
+                                <div class="provider-actions">
+                                    <button class="btn-test-provider" data-test="mistral">Otestovat</button>
+                                </div>
+                                <div class="provider-status" id="status-mistral"></div>
+                            </div>
+                        </div>
+
+                        <!-- HuggingFace -->
+                        <div class="provider-card" data-provider="huggingface">
+                            <div class="provider-header">
+                                <strong>HuggingFace</strong>
+                                <label class="toggle"><input type="radio" name="active-provider" value="huggingface"><span class="toggle-slider"></span></label>
+                            </div>
+                            <div class="provider-fields">
+                                <input type="password" id="set-hf-key" placeholder="API Key (hf_...)">
+                                <select id="set-hf-model">
+                                    <option value="mistralai/Mistral-7B-Instruct-v0.3">Mistral 7B</option>
+                                    <option value="meta-llama/Llama-3.2-3B-Instruct">Llama 3.2 3B</option>
+                                    <option value="Qwen/Qwen2.5-7B-Instruct">Qwen 2.5 7B</option>
+                                </select>
+                                <div class="provider-actions">
+                                    <button class="btn-test-provider" data-test="huggingface">Otestovat</button>
+                                </div>
+                                <div class="provider-status" id="status-huggingface"></div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -832,6 +891,10 @@ ws.send(JSON.stringify({type:"ptz_stop"}));</pre>
                             <button class="btn-check" id="btn-check-camera" title="Ověřit připojení">🔄</button>
                         </div>
                         <span class="setting-hint" id="cam-check-result"></span>
+                    </div>
+                    <div class="setting-row">
+                        <button class="btn-secondary" id="btn-discover-cameras" style="margin-bottom:8px;">🔍 Automaticky hledat kamery (ONVIF)</button>
+                        <div id="discovered-cameras" class="hidden" style="margin-top:6px;"></div>
                     </div>
                     <div class="setting-row">
                         <label>Uživatel</label>
@@ -996,6 +1059,7 @@ ws.send(JSON.stringify({type:"ptz_stop"}));</pre>
 
     <script src="ai-providers.js"></script>
     <script src="voice-pipeline.js"></script>
+    <script src="camera-discovery.js"></script>
     <script src="app.js"></script>
 </body>
 </html>
