@@ -47,11 +47,17 @@
         initLocalRecording();
         initProviderUI();
         initVoiceButtons();
-        connectWebSocket();
-        checkCameraStatus();
-        setInterval(checkCameraStatus, 15000);
+        loadSettings();
         applyMode();
         updateProviderStatus();
+
+        if (currentMode === "local") {
+            connectLocalCamera();
+        } else {
+            connectWebSocket();
+        }
+        checkCameraStatus();
+        setInterval(checkCameraStatus, 15000);
     }
 
     // ─── Auth ───
@@ -137,7 +143,15 @@
         if (activeBtn) activeBtn.classList.add("active");
 
         applyMode();
-        reconnectWebSocket();
+
+        stopLocalCamera();
+        if (ws) { ws.onclose = null; ws.close(); ws = null; }
+
+        if (mode === "local") {
+            connectLocalCamera();
+        } else {
+            connectWebSocket();
+        }
 
         fetch(`${API}/api/mode`, {
             method: "POST",
@@ -755,6 +769,180 @@
         }
     }
 
+    // ─── Camera ───
+    let mjpegImg = null;
+    let snapshotTimer = null;
+
+    function getCameraUrl() {
+        const s = JSON.parse(localStorage.getItem("eyeplus_settings") || "{}");
+        const ip = s.camera_ip || "";
+        const user = s.camera_user || "admin";
+        const pass = s.camera_pass || "admin";
+        if (!ip) return null;
+        const auth = user ? `${user}:${pass}@` : "";
+        return { base: `http://${auth}${ip}`, ip, user, pass };
+    }
+
+    const MJPEG_PATHS = [
+        "/cgi-bin/mjpeg.cgi?channel=1&subtype=1",
+        "/cgi-bin/mjpeg.cgi?channel=1",
+        "/cgi-bin/mjpeg.cgi",
+        "/video1.mjpg",
+        "/video.mjpg",
+        "/mjpg/video.mjpg",
+        "/ISAPI/Streaming/channels/101/httpPreview",
+    ];
+
+    const SNAPSHOT_PATHS = [
+        "/cgi-bin/snapshot.cgi?channel=1",
+        "/cgi-bin/snapshot.cgi",
+        "/snapshot.jpg",
+        "/ISAPI/Streaming/channels/101/picture",
+    ];
+
+    async function connectLocalCamera() {
+        stopLocalCamera();
+
+        const cam = getCameraUrl();
+        if (!cam) {
+            showToast("Zadejte IP kamery v Nastaveni");
+            return;
+        }
+
+        showToast("Pripojuji kameru " + cam.ip + "...");
+
+        const placeholder = $("#video-placeholder");
+        const canvas = $("#video-canvas");
+        if (placeholder) placeholder.style.display = "none";
+
+        // Remove old mjpeg img if exists
+        if (mjpegImg) { mjpegImg.remove(); mjpegImg = null; }
+
+        // Try MJPEG stream in img tag
+        mjpegImg = document.createElement("img");
+        mjpegImg.style.cssText = "width:100%;height:100%;object-fit:contain;position:absolute;top:0;left:0;";
+        mjpegImg.id = "mjpeg-stream";
+        mjpegImg.alt = "Camera stream";
+
+        let connected = false;
+
+        mjpegImg.onload = () => {
+            if (!connected) {
+                connected = true;
+                cameraOnline = true;
+                $("#camera-status").textContent = "ONLINE";
+                $("#camera-status").className = "status-badge online";
+                showToast("Kamera pripojena!");
+
+                // Draw to canvas for snapshot/recording support
+                startMjpegToCanvas(mjpegImg);
+            }
+        };
+
+        mjpegImg.onerror = () => {
+            if (!connected) {
+                mjpegImg.remove();
+                mjpegImg = null;
+                trySnapshotMode(cam);
+            }
+        };
+
+        // Try MJPEG paths
+        let tried = 0;
+        function tryNextMjpeg() {
+            if (tried >= MJPEG_PATHS.length || connected) {
+                if (!connected) {
+                    trySnapshotMode(cam);
+                }
+                return;
+            }
+            const url = cam.base + MJPEG_PATHS[tried++];
+            mjpegImg.src = url;
+        }
+
+        tryNextMjpeg();
+        mjpegImg._tryNext = tryNextMjpeg;
+        mjpegImg._retryInterval = setInterval(() => {
+            if (!connected && mjpegImg) tryNextMjpeg();
+        }, 3000);
+    }
+
+    function startMjpegToCanvas(img) {
+        const canvas = $("#video-canvas");
+        if (!canvas) return;
+        const ctx = canvas.getContext("2d");
+
+        function drawFrame() {
+            if (!img || !img.naturalWidth) {
+                requestAnimationFrame(drawFrame);
+                return;
+            }
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+            ctx.drawImage(img, 0, 0);
+            requestAnimationFrame(drawFrame);
+        }
+        drawFrame();
+    }
+
+    function trySnapshotMode(cam) {
+        showToast("zkousim snapshot mode...");
+        let tried = 0;
+
+        function tryNextSnapshot() {
+            if (tried >= SNAPSHOT_PATHS.length) {
+                showToast("Kamera nedostupna. Zkontrolujte IP a heslo.");
+                const placeholder = $("#video-placeholder");
+                if (placeholder) placeholder.style.display = "flex";
+                return;
+            }
+
+            const url = cam.base + SNAPSHOT_PATHS[tried++];
+            const testImg = new Image();
+            testImg.onload = () => {
+                cameraOnline = true;
+                $("#camera-status").textContent = "ONLINE";
+                $("#camera-status").className = "status-badge online";
+                showToast("Kamera pripojena (snapshot)!");
+                startSnapshotPolling(url);
+            };
+            testImg.onerror = () => tryNextSnapshot();
+            testImg.src = url + "?t=" + Date.now();
+        }
+
+        tryNextSnapshot();
+    }
+
+    function startSnapshotPolling(url) {
+        stopLocalCamera();
+        const canvas = $("#video-canvas");
+        if (!canvas) return;
+        const ctx = canvas.getContext("2d");
+
+        snapshotTimer = setInterval(() => {
+            const img = new Image();
+            img.crossOrigin = "anonymous";
+            img.onload = () => {
+                canvas.width = img.naturalWidth;
+                canvas.height = img.naturalHeight;
+                ctx.drawImage(img, 0, 0);
+            };
+            img.src = url + "?t=" + Date.now();
+        }, 1000);
+    }
+
+    function stopLocalCamera() {
+        if (mjpegImg) {
+            clearInterval(mjpegImg._retryInterval);
+            mjpegImg.remove();
+            mjpegImg = null;
+        }
+        if (snapshotTimer) {
+            clearInterval(snapshotTimer);
+            snapshotTimer = null;
+        }
+    }
+
     // ─── WebSocket ───
     function getWSUrl() {
         if (currentMode === "online") {
@@ -808,7 +996,11 @@
             ws.close();
             ws = null;
         }
-        connectWebSocket();
+        if (currentMode === "local") {
+            connectLocalCamera();
+        } else {
+            connectWebSocket();
+        }
     }
 
     function handleWSMessage(data) {
@@ -1175,6 +1367,11 @@
         localStorage.setItem("eyeplus_settings", JSON.stringify(s));
         showToast("Nastaveni ulozeno");
         updateProviderStatus();
+
+        if (currentMode === "local") {
+            stopLocalCamera();
+            setTimeout(connectLocalCamera, 500);
+        }
     }
 
     async function testNotification(channel) {
