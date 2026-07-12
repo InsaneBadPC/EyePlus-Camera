@@ -54,7 +54,7 @@ jobs:
         ROOT=$PWD
 
         rm -rf $BUILD
-        mkdir -p $BUILD/gen $BUILD/obj/classes $BUILD/staging/extracted
+        mkdir -p $BUILD/gen $BUILD/obj/classes $BUILD/staging/extracted $BUILD/dex
 
         echo "=== AAPT2 compile ==="
         find $SRC/res -name "*.xml" -exec $BT/aapt2 compile {} -o $BUILD/obj/ \;
