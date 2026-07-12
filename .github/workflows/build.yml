@@ -45,20 +45,22 @@ jobs:
 
     - name: Build APK
       run: |
+        set -e
         SDK=$ANDROID_HOME
         BT=$SDK/build-tools/34.0.0
         PLATFORM=$SDK/platforms/android-34/android.jar
         SRC=app/src/main
         BUILD=build
+        ROOT=$PWD
 
         rm -rf $BUILD
-        mkdir -p $BUILD/gen $BUILD/obj/classes $BUILD/staging
+        mkdir -p $BUILD/gen $BUILD/obj/classes $BUILD/staging/extracted
 
-        # AAPT2 compile
+        echo "=== AAPT2 compile ==="
         find $SRC/res -name "*.xml" -exec $BT/aapt2 compile {} -o $BUILD/obj/ \;
         find $SRC/res -name "*.png" -exec $BT/aapt2 compile {} -o $BUILD/obj/ \; 2>/dev/null || true
 
-        # AAPT2 link
+        echo "=== AAPT2 link ==="
         $BT/aapt2 link -I $PLATFORM \
             --manifest $SRC/AndroidManifest.xml \
             --java $BUILD/gen \
@@ -66,28 +68,31 @@ jobs:
             -o $BUILD/staging/app-unsigned.apk \
             $(find $BUILD/obj -name "*.flat")
 
-        # Compile Java
+        echo "=== Compile Java ==="
         find $SRC/java $BUILD/gen -name "*.java" > $BUILD/srcs.txt
         javac -source 17 -target 17 -classpath $PLATFORM -d $BUILD/obj/classes @$BUILD/srcs.txt
 
-        # DEX
+        echo "=== DEX ==="
         find $BUILD/obj/classes -name "*.class" > $BUILD/classes.txt
-        $BT/d8 --output $BUILD/ --lib $PLATFORM @$BUILD/classes.txt
+        $BT/d8 --output $BUILD/dex --lib $PLATFORM $(cat $BUILD/classes.txt)
+        ls -la $BUILD/dex/
 
-        # Merge dex+assets into APK
+        echo "=== Merge dex+assets into APK ==="
         cd $BUILD/staging
         unzip -q -o app-unsigned.apk -d extracted
-        cp $BUILD/classes.dex extracted/
+        cp $ROOT/$BUILD/dex/classes.dex extracted/
         mkdir -p extracted/assets/css extracted/assets/js
-        cp $SRC/assets/index.html extracted/assets/
-        cp $SRC/assets/css/style.css extracted/assets/css/
-        cp $SRC/assets/js/*.js extracted/assets/js/
-        cp $SRC/assets/config.json extracted/assets/ 2>/dev/null || true
+        cp $ROOT/$SRC/assets/index.html extracted/assets/
+        cp $ROOT/$SRC/assets/css/style.css extracted/assets/css/
+        for f in $ROOT/$SRC/assets/js/*.js; do
+          cp "$f" extracted/assets/js/
+        done
+        cp $ROOT/$SRC/assets/config.json extracted/assets/ 2>/dev/null || true
         cd extracted
-        zip -q -r $BUILD/staging/repackaged.apk .
-        cd ../../..
+        zip -q -r $ROOT/$BUILD/staging/repackaged.apk .
+        cd $ROOT
 
-        # Sign
+        echo "=== Sign ==="
         keytool -genkeypair -v -keystore $BUILD/debug.keystore -alias eyeplus \
             -keyalg RSA -keysize 2048 -validity 10000 \
             -storepass android -keypass android \
@@ -101,7 +106,8 @@ jobs:
             $BUILD/staging/repackaged.apk
 
         $BT/apksigner verify $BUILD/eyeplus-v1.0.apk
-        echo "BUILD OK"
+        echo "=== BUILD OK ==="
+        ls -la $BUILD/eyeplus-v1.0.apk
 
     - name: Upload APK artifact
       uses: actions/upload-artifact@v4
