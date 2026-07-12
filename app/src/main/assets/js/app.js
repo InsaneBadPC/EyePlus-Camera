@@ -31,7 +31,7 @@
 
     document.addEventListener("DOMContentLoaded", () => {
         console.log("EYEPLUS " + APP_VERSION + " loaded, isNative=" + isNative);
-        if (isNative || token) showMain();
+        showMain();
         initAuth();
         initModeSwitch();
         initNavigation();
@@ -48,16 +48,6 @@
         setInterval(checkCameraStatus, 15000);
         applyMode();
         updateProviderStatus();
-
-        if (isNative) {
-            setTimeout(() => {
-                const authScreen = document.getElementById("auth-screen");
-                if (authScreen && authScreen.classList.contains("active")) {
-                    console.log("EYEPLUS: forcing past auth screen");
-                    showMain();
-                }
-            }, 500);
-        }
     });
 
     // ─── Auth ───
