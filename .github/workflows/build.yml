@@ -54,7 +54,7 @@ jobs:
         ROOT=$PWD
 
         rm -rf $BUILD
-        mkdir -p $BUILD/gen $BUILD/obj/classes $BUILD/staging/extracted $BUILD/dex
+        mkdir -p $BUILD/gen $BUILD/obj/classes $BUILD/dex $BUILD/staging
 
         echo "=== AAPT2 compile ==="
         find $SRC/res -name "*.xml" -exec $BT/aapt2 compile {} -o $BUILD/obj/ \;
@@ -79,19 +79,10 @@ jobs:
         $BT/d8 --output $BUILD/dex --lib $PLATFORM $(cat $BUILD/classes.txt)
         ls -la $BUILD/dex/
 
-        echo "=== Merge dex+assets into APK ==="
-        cd $BUILD/staging
-        unzip -q -o app-unsigned.apk -d extracted
-        cp $ROOT/$BUILD/dex/classes.dex extracted/
-        mkdir -p extracted/assets/css extracted/assets/js
-        cp $ROOT/$SRC/assets/index.html extracted/assets/
-        cp $ROOT/$SRC/assets/css/style.css extracted/assets/css/
-        for f in $ROOT/$SRC/assets/js/*.js; do
-          cp "$f" extracted/assets/js/
-        done
-        cp $ROOT/$SRC/assets/config.json extracted/assets/ 2>/dev/null || true
-        cd extracted
-        zip -q -r $ROOT/$BUILD/staging/repackaged.apk .
+        echo "=== Add DEX to APK (no repackage) ==="
+        cp $BUILD/staging/app-unsigned.apk $BUILD/staging/with-dex.apk
+        cd $BUILD/dex
+        zip -q -0 $ROOT/$BUILD/staging/with-dex.apk classes.dex
         cd $ROOT
 
         echo "=== Sign ==="
@@ -101,7 +92,7 @@ jobs:
             -dname "CN=EyePlus,OU=Dev,O=EyePlus,L=Prague,ST=CR,C=CZ" 2>/dev/null
 
         echo "=== Zipalign ==="
-        $BT/zipalign -f 4 $BUILD/staging/repackaged.apk $BUILD/staging/aligned.apk
+        $BT/zipalign -f 4 $BUILD/staging/with-dex.apk $BUILD/staging/aligned.apk
 
         $BT/apksigner sign \
             --ks $BUILD/debug.keystore \
