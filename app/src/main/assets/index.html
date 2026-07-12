@@ -230,27 +230,11 @@
 </head>
 <body>
     <div id="app">
-        <!-- Auth Screen -->
-        <div id="auth-screen" class="screen active">
-            <div class="auth-container">
-                <div class="logo">
-                    <div class="logo-icon">📷</div>
-                    <h1>EYEPLUS</h1>
-                    <p>Camera AI System</p>
-                </div>
-                <form id="auth-form" class="auth-form">
-                    <input type="email" id="auth-email" placeholder="Email" required>
-                    <input type="password" id="auth-password" placeholder="Heslo" required>
-                    <button type="submit" class="btn-primary">Přihlásit se</button>
-                    <button type="button" id="auth-register" class="btn-secondary">Registrovat</button>
-                </form>
-                <div class="auth-divider">nebo</div>
-                <button id="auth-skip" class="btn-text">Pokračovat bez účtu</button>
-            </div>
-        </div>
+        <!-- Auth Screen (bypassed) -->
+        <div id="auth-screen" class="screen" style="display:none!important"></div>
 
         <!-- Main App -->
-        <div id="main-screen" class="screen">
+        <div id="main-screen" class="screen active">
             <!-- Top Bar -->
             <header class="top-bar">
                 <div class="top-left">

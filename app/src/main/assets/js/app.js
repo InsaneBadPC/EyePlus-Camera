@@ -34,8 +34,8 @@
 
         const authScreen = document.getElementById("auth-screen");
         const mainScreen = document.getElementById("main-screen");
-        if (authScreen) authScreen.style.display = "none";
-        if (mainScreen) mainScreen.style.display = "flex";
+        if (authScreen) { authScreen.style.display = "none"; authScreen.classList.remove("active"); }
+        if (mainScreen) { mainScreen.style.display = "flex"; mainScreen.classList.add("active"); }
         initAuth();
         initModeSwitch();
         initNavigation();
@@ -62,8 +62,10 @@
 
     // ─── Auth ───
     function initAuth() {
+        const authForm = $("#auth-form");
+        if (!authForm) return;
 
-        $("#auth-form").addEventListener("submit", async (e) => {
+        authForm.addEventListener("submit", async (e) => {
             e.preventDefault();
             const email = $("#auth-email").value;
             const pass = $("#auth-password").value;
