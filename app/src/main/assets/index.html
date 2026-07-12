@@ -7,6 +7,27 @@
     <meta name="mobile-web-app-capable" content="yes">
     <title>EYEPLUS Camera AI</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📷</text></svg>">
+    <script>
+    // Nav functions — inline, works even if app.js fails
+    window._nav = function(tab) {
+        var panels = document.querySelectorAll(".panel");
+        for (var i = 0; i < panels.length; i++) panels[i].classList.add("hidden");
+        var panel = document.getElementById(tab + "-panel");
+        if (panel) panel.classList.remove("hidden");
+        var navs = document.querySelectorAll(".nav-btn");
+        for (var i = 0; i < navs.length; i++) navs[i].classList.remove("active");
+        var active = tab === "live" ? navs[0] : document.querySelector('.nav-btn[data-tab="' + tab + '"]');
+        if (active) active.classList.add("active");
+        if (tab === "recordings" && window.loadRecordings) window.loadRecordings();
+    };
+    window._closePanel = function(id) {
+        var el = document.getElementById(id);
+        if (el) el.classList.add("hidden");
+        var navs = document.querySelectorAll(".nav-btn");
+        for (var i = 0; i < navs.length; i++) navs[i].classList.remove("active");
+        if (navs[0]) navs[0].classList.add("active");
+    };
+    </script>
     <style>
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
         :root {
@@ -251,7 +272,7 @@
                         </button>
                     </div>
                     <button id="btn-record" class="icon-btn" title="Nahrávat">⏺</button>
-                    <button id="btn-settings" class="icon-btn" title="Nastavení">⚙</button>
+                    <button id="btn-settings" class="icon-btn" title="Nastavení" onclick="window._nav('settings')">⚙</button>
                 </div>
             </header>
 
@@ -309,23 +330,23 @@
 
             <!-- Bottom Navigation -->
             <nav class="bottom-nav">
-                <button class="nav-btn active" data-tab="live">
+                <button class="nav-btn active" data-tab="live" onclick="window._nav('live')">
                     <span class="nav-icon">📹</span>
                     <span>Živě</span>
                 </button>
-                <button class="nav-btn" data-tab="recordings">
+                <button class="nav-btn" data-tab="recordings" onclick="window._nav('recordings')">
                     <span class="nav-icon">🎞</span>
                     <span>Záznamy</span>
                 </button>
-                <button class="nav-btn" data-tab="ai">
+                <button class="nav-btn" data-tab="ai" onclick="window._nav('ai')">
                     <span class="nav-icon">🤖</span>
                     <span>AI Chat</span>
                 </button>
-                <button class="nav-btn" data-tab="settings">
+                <button class="nav-btn" data-tab="settings" onclick="window._nav('settings')">
                     <span class="nav-icon">⚙</span>
                     <span>Nastavení</span>
                 </button>
-                <button class="nav-btn" data-tab="agents">
+                <button class="nav-btn" data-tab="agents" onclick="window._nav('agents')">
                     <span class="nav-icon">🔗</span>
                     <span>Agenti</span>
                 </button>
@@ -336,7 +357,7 @@
         <div id="recordings-panel" class="panel hidden">
             <div class="panel-header">
                 <h2>Záznamy</h2>
-                <button class="btn-close" data-close="recordings-panel">✕</button>
+                <button class="btn-close" onclick="window._closePanel('recordings-panel')">✕</button>
             </div>
             <div class="panel-tabs">
                 <button class="panel-tab active" data-subtab="motion-recordings">Pohyb</button>
@@ -357,7 +378,7 @@
         <div id="ai-panel" class="panel hidden">
             <div class="panel-header">
                 <h2>🤖 AI Asistent</h2>
-                <button class="btn-close" data-close="ai-panel">✕</button>
+                <button class="btn-close" onclick="window._closePanel('ai-panel')">✕</button>
             </div>
             <div class="chat-container">
                 <div id="chat-messages" class="chat-messages">
@@ -377,7 +398,7 @@
         <div id="agents-panel" class="panel hidden">
             <div class="panel-header">
                 <h2>🔗 AI Agenti</h2>
-                <button class="btn-close" data-close="agents-panel">✕</button>
+                <button class="btn-close" onclick="window._closePanel('agents-panel')">✕</button>
             </div>
             <div class="panel-content">
                 <!-- Multi-Provider AI API -->
@@ -612,7 +633,7 @@ ws.send(JSON.stringify({type:"ptz_stop"}));</pre>
         <div id="settings-panel" class="panel hidden">
             <div class="panel-header">
                 <h2>Nastavení</h2>
-                <button class="btn-close" data-close="settings-panel">✕</button>
+                <button class="btn-close" onclick="window._closePanel('settings-panel')">✕</button>
             </div>
             <div class="panel-content settings-content">
 

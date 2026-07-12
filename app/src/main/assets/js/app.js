@@ -186,12 +186,7 @@
 
     // ─── Navigation ───
     function showPanel(tab) {
-        $$(".panel").forEach(p => {
-            if (p.id) p.classList.add("hidden");
-        });
-        const panel = document.getElementById(tab + "-panel");
-        if (panel) panel.classList.remove("hidden");
-        if (tab === "recordings") loadRecordings();
+        if (window._nav) window._nav(tab);
     }
 
     function initNavigation() {
