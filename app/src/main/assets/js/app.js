@@ -36,20 +36,23 @@
         const mainScreen = document.getElementById("main-screen");
         if (authScreen) { authScreen.style.display = "none"; authScreen.classList.remove("active"); }
         if (mainScreen) { mainScreen.style.display = "flex"; mainScreen.classList.add("active"); }
-        initAuth();
-        initModeSwitch();
-        initNavigation();
-        initPTZ();
-        initQuickActions();
-        initChat();
-        initSettings();
-        initModals();
-        initLocalRecording();
-        initProviderUI();
-        initVoiceButtons();
-        loadSettings();
-        applyMode();
-        updateProviderStatus();
+
+        const safeInit = (name, fn) => { try { fn(); } catch(e) { console.error("Init failed: " + name, e); } };
+
+        safeInit("auth", initAuth);
+        safeInit("modeSwitch", initModeSwitch);
+        safeInit("navigation", initNavigation);
+        safeInit("ptz", initPTZ);
+        safeInit("quickActions", initQuickActions);
+        safeInit("chat", initChat);
+        safeInit("settings", initSettings);
+        safeInit("modals", initModals);
+        safeInit("localRecording", initLocalRecording);
+        safeInit("providerUI", initProviderUI);
+        safeInit("voiceButtons", initVoiceButtons);
+        safeInit("loadSettings", loadSettings);
+        safeInit("applyMode", applyMode);
+        safeInit("updateProviderStatus", updateProviderStatus);
 
         if (currentMode === "local") {
             connectLocalCamera();
