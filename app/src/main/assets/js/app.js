@@ -185,34 +185,41 @@
     }
 
     // ─── Navigation ───
+    function showPanel(tab) {
+        $$(".panel").forEach(p => {
+            if (p.id) p.classList.add("hidden");
+        });
+        const panel = document.getElementById(tab + "-panel");
+        if (panel) panel.classList.remove("hidden");
+        if (tab === "recordings") loadRecordings();
+    }
+
     function initNavigation() {
-        $$(".nav-btn").forEach(btn => {
-            btn.addEventListener("click", () => {
+        document.addEventListener("click", (e) => {
+            const btn = e.target.closest(".nav-btn[data-tab]");
+            if (btn) {
+                e.preventDefault();
+                const tab = btn.dataset.tab;
+                if (tab === "live") {
+                    $$(".panel").forEach(p => p.classList.add("hidden"));
+                    $$(".nav-btn").forEach(b => b.classList.remove("active"));
+                    btn.classList.add("active");
+                    return;
+                }
                 $$(".nav-btn").forEach(b => b.classList.remove("active"));
                 btn.classList.add("active");
-                const tab = btn.dataset.tab;
-
-                $$(".panel").forEach(p => p.classList.add("hidden"));
-
-                if (tab === "recordings") {
-                    $("#recordings-panel").classList.remove("hidden");
-                    loadRecordings();
-                } else if (tab === "ai") {
-                    $("#ai-panel").classList.remove("hidden");
-                } else if (tab === "settings") {
-                    $("#settings-panel").classList.remove("hidden");
-                } else if (tab === "agents") {
-                    $("#agents-panel").classList.remove("hidden");
-                }
-            });
-        });
-
-        $$(".btn-close").forEach(btn => {
-            btn.addEventListener("click", () => {
-                $(`#${btn.dataset.close}`).classList.add("hidden");
-                $$(".nav-btn").forEach(b => b.classList.remove("active"));
-                $$(".nav-btn")[0].classList.add("active");
-            });
+                showPanel(tab);
+                return;
+            }
+            const close = e.target.closest(".btn-close[data-close]");
+            if (close) {
+                e.preventDefault();
+                const el = document.getElementById(close.dataset.close);
+                if (el) el.classList.add("hidden");
+                const navs = document.querySelectorAll(".nav-btn");
+                navs.forEach(b => b.classList.remove("active"));
+                if (navs[0]) navs[0].classList.add("active");
+            }
         });
     }
 
@@ -291,34 +298,41 @@
 
     // ─── Quick Actions ───
     function initQuickActions() {
-        $("#btn-record").addEventListener("click", toggleRecording);
-        $("#btn-settings").addEventListener("click", () => {
-            $$(".nav-btn").forEach(b => b.classList.remove("active"));
-            $$(".panel").forEach(p => p.classList.add("hidden"));
-            $$(".nav-btn")[3].classList.add("active");
-            $("#settings-panel").classList.remove("hidden");
+        if ($("#btn-record")) $("#btn-record").addEventListener("click", toggleRecording);
+        if ($("#btn-snapshot")) $("#btn-snapshot").addEventListener("click", takeSnapshot);
+        if ($("#btn-speak")) $("#btn-speak").addEventListener("click", () => {
+            const m = $("#speak-modal");
+            if (m) m.classList.remove("hidden");
         });
-
-        $("#btn-snapshot").addEventListener("click", takeSnapshot);
-        $("#btn-speak").addEventListener("click", () => {
-            $("#speak-modal").classList.remove("hidden");
-        });
-        $("#btn-ai-analyze").addEventListener("click", analyzeCurrentFrame);
-        $("#btn-cloud-upload").addEventListener("click", () => uploadSnapshot("cloud"));
-        $("#btn-save-phone").addEventListener("click", () => {
+        if ($("#btn-ai-analyze")) $("#btn-ai-analyze").addEventListener("click", analyzeCurrentFrame);
+        if ($("#btn-cloud-upload")) $("#btn-cloud-upload").addEventListener("click", () => uploadSnapshot("cloud"));
+        if ($("#btn-save-phone")) $("#btn-save-phone").addEventListener("click", () => {
             const canvas = $("#video-canvas");
-            if (!canvas.width) { showToast("Zadny video stream"); return; }
+            if (!canvas || !canvas.width) { showToast("Zadny video stream"); return; }
             saveImageToStorage(canvas.toDataURL("image/jpeg", 0.9), `eyeplus_${Date.now()}.jpg`);
             showToast("Snimek ulozen do telefonu!");
         });
-
         if ($("#btn-check-camera")) {
             $("#btn-check-camera").addEventListener("click", checkCameraIP);
         }
-
         if ($("#btn-discover-cameras")) {
             $("#btn-discover-cameras").addEventListener("click", discoverCameras);
         }
+
+        document.addEventListener("click", (e) => {
+            const settingsBtn = e.target.closest("#btn-settings");
+            if (settingsBtn) {
+                e.preventDefault();
+                $$(".nav-btn").forEach(b => b.classList.remove("active"));
+                const navs = document.querySelectorAll(".nav-btn");
+                $$(".panel").forEach(p => p.classList.add("hidden"));
+                const sp = $("#settings-panel");
+                if (sp) sp.classList.remove("hidden");
+                const targetBtn = document.querySelector('.nav-btn[data-tab="settings"]');
+                if (targetBtn) targetBtn.classList.add("active");
+                return;
+            }
+        });
     }
 
     async function discoverCameras() {
@@ -386,9 +400,9 @@
             }
             addChatMessage("assistant", analysis || "Nepodarilo se analyzovat");
             $$(".nav-btn").forEach(b => b.classList.remove("active"));
-            $$(".panel").forEach(p => p.classList.add("hidden"));
-            $$(".nav-btn")[2].classList.add("active");
-            $("#ai-panel").classList.remove("hidden");
+            showPanel("ai");
+            const aiBtn = document.querySelector('.nav-btn[data-tab="ai"]');
+            if (aiBtn) aiBtn.classList.add("active");
         } catch (e) {
             showToast("Chyba pri analyze: " + (e.message || ""));
         }
@@ -572,11 +586,14 @@
 
     // ─── Chat ───
     function initChat() {
-        $("#btn-send").addEventListener("click", sendChat);
-        $("#chat-input").addEventListener("keydown", (e) => {
+        const sendBtn = $("#btn-send");
+        if (sendBtn) sendBtn.addEventListener("click", sendChat);
+        const chatInput = $("#chat-input");
+        if (chatInput) chatInput.addEventListener("keydown", (e) => {
             if (e.key === "Enter") sendChat();
         });
-        $("#btn-voice").addEventListener("click", toggleVoice);
+        const voiceBtn = $("#btn-voice");
+        if (voiceBtn) voiceBtn.addEventListener("click", toggleVoice);
     }
 
     async function sendChat() {
@@ -735,9 +752,9 @@
             }
 
             $$(".nav-btn").forEach(b => b.classList.remove("active"));
-            $$(".panel").forEach(p => p.classList.add("hidden"));
-            $$(".nav-btn")[2].classList.add("active");
-            $("#ai-panel").classList.remove("hidden");
+            showPanel("ai");
+            const aiBtn = document.querySelector('.nav-btn[data-tab="ai"]');
+            if (aiBtn) aiBtn.classList.add("active");
         } catch (e) {
             voiceBtn.classList.remove("recording");
             showToast("Chyba hlasoveho prikazu: " + (e.message || ""));
@@ -1238,16 +1255,21 @@
 
     // ─── Settings ───
     function initSettings() {
-        $("#btn-save-settings").addEventListener("click", saveSettings);
-        $("#btn-logout").addEventListener("click", () => {
+        const saveBtn = $("#btn-save-settings");
+        if (saveBtn) saveBtn.addEventListener("click", saveSettings);
+        const logoutBtn = $("#btn-logout");
+        if (logoutBtn) logoutBtn.addEventListener("click", () => {
             token = "";
             localStorage.removeItem("eyeplus_token");
             location.reload();
         });
 
-        $("#btn-test-telegram").addEventListener("click", () => testNotification("telegram"));
-        $("#btn-test-email").addEventListener("click", () => testNotification("email"));
-        $("#btn-test-whatsapp").addEventListener("click", () => testNotification("whatsapp"));
+        const testTg = $("#btn-test-telegram");
+        if (testTg) testTg.addEventListener("click", () => testNotification("telegram"));
+        const testEmail = $("#btn-test-email");
+        if (testEmail) testEmail.addEventListener("click", () => testNotification("email"));
+        const testWa = $("#btn-test-whatsapp");
+        if (testWa) testWa.addEventListener("click", () => testNotification("whatsapp"));
 
         const autoRec = $("#set-auto-record");
         if (autoRec) {
@@ -1405,24 +1427,33 @@
     // ─── Modals ───
     function initModals() {
         $$("[data-close]").forEach(btn => {
-            btn.addEventListener("click", () => $(`#${btn.dataset.close}`).classList.add("hidden"));
+            btn.addEventListener("click", () => {
+                const el = $(`#${btn.dataset.close}`);
+                if (el) el.classList.add("hidden");
+            });
         });
 
-        $("#btn-speak-send").addEventListener("click", async () => {
-            const text = $("#speak-text").value.trim();
+        const speakSend = $("#btn-speak-send");
+        if (speakSend) speakSend.addEventListener("click", async () => {
+            const textInput = $("#speak-text");
+            if (!textInput) return;
+            const text = textInput.value.trim();
             if (!text) return;
             await speakThroughCamera(text);
-            $("#speak-modal").classList.add("hidden");
-            $("#speak-text").value = "";
+            const modal = $("#speak-modal");
+            if (modal) modal.classList.add("hidden");
+            textInput.value = "";
         });
 
-        $("#btn-snapshot-download").addEventListener("click", () => {
+        const snapDownload = $("#btn-snapshot-download");
+        if (snapDownload) snapDownload.addEventListener("click", () => {
             if (!currentSnapshot) return;
             saveImageToStorage(currentSnapshot, `eyeplus_${Date.now()}.jpg`);
             showToast("Snimek ulozen do telefonu!");
         });
 
-        $("#btn-snapshot-cloud").addEventListener("click", () => uploadSnapshot("cloud"));
+        const snapCloud = $("#btn-snapshot-cloud");
+        if (snapCloud) snapCloud.addEventListener("click", () => uploadSnapshot("cloud"));
     }
 
     async function uploadSnapshot(type) {
