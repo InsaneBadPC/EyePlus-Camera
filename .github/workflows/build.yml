@@ -64,6 +64,8 @@ jobs:
         $BT/aapt2 link -I $PLATFORM \
             --manifest $SRC/AndroidManifest.xml \
             --java $BUILD/gen \
+            --min-sdk-version 24 \
+            --target-sdk-version 34 \
             -A $SRC/assets \
             -o $BUILD/staging/app-unsigned.apk \
             $(find $BUILD/obj -name "*.flat")
@@ -98,19 +100,22 @@ jobs:
             -storepass android -keypass android \
             -dname "CN=EyePlus,OU=Dev,O=EyePlus,L=Prague,ST=CR,C=CZ" 2>/dev/null
 
+        echo "=== Zipalign ==="
+        $BT/zipalign -f 4 $BUILD/staging/repackaged.apk $BUILD/staging/aligned.apk
+
         $BT/apksigner sign \
             --ks $BUILD/debug.keystore \
             --ks-pass pass:android \
             --key-pass pass:android \
-            --out $BUILD/eyeplus-v1.2.apk \
-            $BUILD/staging/repackaged.apk
+            --out $BUILD/eyeplus-v1.5.apk \
+            $BUILD/staging/aligned.apk
 
-        $BT/apksigner verify $BUILD/eyeplus-v1.2.apk
+        $BT/apksigner verify $BUILD/eyeplus-v1.5.apk
         echo "=== BUILD OK ==="
-        ls -la $BUILD/eyeplus-v1.2.apk
+        ls -la $BUILD/eyeplus-v1.5.apk
 
     - name: Upload APK artifact
       uses: actions/upload-artifact@v4
       with:
         name: eyeplus-apk
-        path: build/eyeplus-v1.2.apk
+        path: build/eyeplus-v1.5.apk
