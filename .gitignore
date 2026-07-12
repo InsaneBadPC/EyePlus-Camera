@@ -2,3 +2,4 @@ app/src/main/assets/config.json
 *.apk
 build/
 artifact.zip
+*.zip
