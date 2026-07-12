@@ -24,14 +24,18 @@
     let wsPingTimer = null;
 
     const isNative = !!window.NativeBridge;
-    const APP_VERSION = "v1.2";
+    const APP_VERSION = "v1.4";
 
     const $ = (s) => document.querySelector(s);
     const $$ = (s) => document.querySelectorAll(s);
 
-    document.addEventListener("DOMContentLoaded", () => {
-        console.log("EYEPLUS " + APP_VERSION + " loaded, isNative=" + isNative);
-        showMain();
+    function boot() {
+        console.log("EYEPLUS " + APP_VERSION + " booted, isNative=" + isNative);
+
+        const authScreen = document.getElementById("auth-screen");
+        const mainScreen = document.getElementById("main-screen");
+        if (authScreen) authScreen.style.display = "none";
+        if (mainScreen) mainScreen.style.display = "flex";
         initAuth();
         initModeSwitch();
         initNavigation();
@@ -48,14 +52,10 @@
         setInterval(checkCameraStatus, 15000);
         applyMode();
         updateProviderStatus();
-    });
+    }
 
     // ─── Auth ───
     function initAuth() {
-        if (isNative) {
-            showMain();
-            return;
-        }
 
         $("#auth-form").addEventListener("submit", async (e) => {
             e.preventDefault();
@@ -1249,5 +1249,11 @@
         toast.classList.remove("hidden");
         clearTimeout(toast._timer);
         toast._timer = setTimeout(() => toast.classList.add("hidden"), 3000);
+    }
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", boot);
+    } else {
+        boot();
     }
 })();
