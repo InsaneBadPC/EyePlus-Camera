@@ -50,6 +50,11 @@
 
     // ─── Auth ───
     function initAuth() {
+        if (isNative) {
+            showMain();
+            return;
+        }
+
         $("#auth-form").addEventListener("submit", async (e) => {
             e.preventDefault();
             const email = $("#auth-email").value;
@@ -91,6 +96,7 @@
 
         $("#auth-skip").addEventListener("click", () => {
             token = "demo";
+            localStorage.setItem("eyeplus_token", token);
             showMain();
         });
     }
