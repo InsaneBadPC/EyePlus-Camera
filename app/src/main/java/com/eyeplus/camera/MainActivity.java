@@ -32,9 +32,15 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStreamWriter;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
     private static final String TAG = "EyePlus";
@@ -185,6 +191,74 @@ public class MainActivity extends Activity {
     }
 
     class NativeBridge {
+        private final ExecutorService httpPool = Executors.newFixedThreadPool(4);
+
+        @JavascriptInterface
+        public void httpGet(String urlString, int timeoutMs, String callbackId) {
+            httpPool.execute(() -> {
+                try {
+                    URL url = new URL(urlString);
+                    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                    conn.setConnectTimeout(timeoutMs > 0 ? timeoutMs : 3000);
+                    conn.setReadTimeout(timeoutMs > 0 ? timeoutMs : 5000);
+                    conn.setRequestMethod("GET");
+                    conn.setDoInput(true);
+                    int code = conn.getResponseCode();
+                    String contentType = conn.getContentType();
+                    InputStream is = code >= 400 ? conn.getErrorStream() : conn.getInputStream();
+                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                    byte[] buf = new byte[8192];
+                    int n;
+                    while ((n = is.read(buf)) != -1) baos.write(buf, 0, n);
+                    is.close();
+                    String b64 = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP);
+                    String json = "{\"status\":" + code + ",\"type\":\"" + (contentType != null ? contentType.replace("\"", "\\\"") : "") + "\",\"body\":\"" + b64 + "\"}";
+                    callJs("_httpCallback('" + callbackId + "', " + json + ")");
+                } catch (Exception e) {
+                    String err = e.getClass().getSimpleName() + ": " + e.getMessage();
+                    callJs("_httpCallback('" + callbackId + "', {status:0,error:\"" + err.replace("\"", "\\\"").replace("\n", " ") + "\"})");
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void httpPost(String urlString, String bodyJson, int timeoutMs, String callbackId) {
+            httpPool.execute(() -> {
+                try {
+                    URL url = new URL(urlString);
+                    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                    conn.setConnectTimeout(timeoutMs > 0 ? timeoutMs : 3000);
+                    conn.setReadTimeout(timeoutMs > 0 ? timeoutMs : 5000);
+                    conn.setRequestMethod("POST");
+                    conn.setDoOutput(true);
+                    conn.setRequestProperty("Content-Type", "application/json");
+                    if (bodyJson != null && !bodyJson.isEmpty()) {
+                        OutputStreamWriter writer = new OutputStreamWriter(conn.getOutputStream());
+                        writer.write(bodyJson);
+                        writer.flush();
+                        writer.close();
+                    }
+                    int code = conn.getResponseCode();
+                    InputStream is = code >= 400 ? conn.getErrorStream() : conn.getInputStream();
+                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                    byte[] buf = new byte[8192];
+                    int n;
+                    while ((n = is.read(buf)) != -1) baos.write(buf, 0, n);
+                    is.close();
+                    String b64 = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP);
+                    String json = "{\"status\":" + code + ",\"body\":\"" + b64 + "\"}";
+                    callJs("_httpCallback('" + callbackId + "', " + json + ")");
+                } catch (Exception e) {
+                    String err = e.getClass().getSimpleName() + ": " + e.getMessage();
+                    callJs("_httpCallback('" + callbackId + "', {status:0,error:\"" + err.replace("\"", "\\\"").replace("\n", " ") + "\"})");
+                }
+            });
+        }
+
+        private void callJs(final String script) {
+            webView.post(() -> webView.evaluateJavascript(script, null));
+        }
+
         @JavascriptInterface
         public void showToast(String message) {
             runOnUiThread(() -> Toast.makeText(MainActivity.this, message, Toast.LENGTH_SHORT).show());

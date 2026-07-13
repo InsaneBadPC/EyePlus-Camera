@@ -29,6 +29,28 @@
     const $ = (s) => document.querySelector(s);
     const $$ = (s) => document.querySelectorAll(s);
 
+    // ─── Native HTTP (bypasses CORS) ───
+    const _httpCallbacks = {};
+    let _httpId = 0;
+    window._httpCallback = (id, data) => {
+        if (_httpCallbacks[id]) { _httpCallbacks[id](data); delete _httpCallbacks[id]; }
+    };
+    function httpGetNative(url, timeout) {
+        return new Promise(resolve => {
+            const id = "_h" + (++_httpId);
+            _httpCallbacks[id] = resolve;
+            if (window.NativeBridge && window.NativeBridge.httpGet) {
+                window.NativeBridge.httpGet(url, timeout || 3000, id);
+            } else {
+                // Fallback: try fetch (will fail on file:// but works via VPS proxy)
+                fetch(url, { signal: AbortSignal.timeout(timeout || 3000) })
+                    .then(async r => ({ status: r.status, type: r.headers.get("content-type") || "", body: btoa(await r.text()) }))
+                    .catch(e => ({ status: 0, error: e.message }))
+                    .then(data => { _httpCallbacks[id](data); delete _httpCallbacks[id]; });
+            }
+        });
+    }
+
     function boot() {
         console.log("EYEPLUS " + APP_VERSION + " booted, isNative=" + isNative);
 
@@ -331,30 +353,7 @@
     }
 
     async function discoverCameras() {
-        const container = $("#discovered-cameras");
-        if (!container || !window.EyePlusDiscovery) { showToast("ONVIF modul neni dostupny"); return; }
-        container.classList.remove("hidden");
-        container.innerHTML = '<div style="color:var(--text2);padding:8px;">Hledám kamery v síti...</div>';
-
-        try {
-            const cameras = await window.EyePlusDiscovery.discoverCameras();
-            if (cameras.length === 0) {
-                container.innerHTML = '<div style="color:var(--text2);padding:8px;">Žádné kamery nenalezeny. Zkuste zadat IP manuálně.</div>';
-                return;
-            }
-            container.innerHTML = cameras.map(cam =>
-                `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:6px;">
-                    <div>
-                        <strong style="font-size:13px;">${cam.name || 'Kamera'}</strong>
-                        <span style="font-size:12px;color:var(--text2);margin-left:6px;">${cam.ip}</span>
-                        <span style="font-size:10px;color:var(--accent);margin-left:6px;">${cam.source || ''}</span>
-                    </div>
-                    <button class="btn-primary btn-sm" onclick="document.getElementById('set-cam-ip').value='${cam.ip}';showToast('IP nastavena: ${cam.ip}')">Použít</button>
-                </div>`
-            ).join("");
-        } catch (e) {
-            container.innerHTML = `<div style="color:var(--red);padding:8px;">Chyba: ${e.message}</div>`;
-        }
+        showToast("Automaticke hledani kamer neni v teto verzi podporovano. Zadejte IP manualne.");
     }
 
     function toggleRecording() {
@@ -400,37 +399,6 @@
             if (aiBtn) aiBtn.classList.add("active");
         } catch (e) {
             showToast("Chyba pri analyze: " + (e.message || ""));
-        }
-    }
-
-    async function checkCameraIP() {
-        const ip = $("#set-cam-ip").value.trim();
-        if (!ip) { showToast("Zadejte IP adresu"); return; }
-
-        const resultEl = $("#cam-check-result");
-        resultEl.textContent = "Kontroluji...";
-        resultEl.style.color = "var(--warning)";
-
-        try {
-            const res = await fetch(`${API}/api/camera/check`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ camera_ip: ip }),
-            });
-            const data = await res.json();
-            cameraOnline = data.online;
-            if (data.online) {
-                resultEl.textContent = "Kamera online!";
-                resultEl.style.color = "var(--success)";
-                $("#camera-status").textContent = "ONLINE";
-                $("#camera-status").className = "status-badge online";
-            } else {
-                resultEl.textContent = "Kamera nedostupna";
-                resultEl.style.color = "var(--danger)";
-            }
-        } catch {
-            resultEl.textContent = "Chyba pripojeni";
-            resultEl.style.color = "var(--danger)";
         }
     }
 
@@ -787,177 +755,124 @@
     }
 
     // ─── Camera ───
-    let mjpegImg = null;
     let snapshotTimer = null;
+    let snapshotUrl = null;
+    let snapshotActive = false;
+
+    const SNAPSHOT_PATHS = [
+        "/cgi-bin/snapshot.cgi?channel=1&subtype=1",
+        "/cgi-bin/snapshot.cgi?channel=1",
+        "/cgi-bin/snapshot.cgi",
+        "/cgi-bin/jpg/image.jpg?size=3",
+        "/snapshot.jpg",
+        "/ISAPI/Streaming/channels/101/picture",
+        "/onvif/snapshot",
+    ];
 
     function getCameraUrl() {
         const s = JSON.parse(localStorage.getItem("eyeplus_settings") || "{}");
         const ip = s.camera_ip || "";
-        const user = s.camera_user || "admin";
-        const pass = s.camera_pass || "admin";
         if (!ip) return null;
-        const auth = user ? `${user}:${pass}@` : "";
-        return { base: `http://${auth}${ip}`, ip, user, pass };
+        return { ip, user: s.camera_user || "admin", pass: s.camera_pass || "admin" };
     }
 
-    const MJPEG_PATHS = [
-        "/cgi-bin/mjpeg.cgi?channel=1&subtype=1",
-        "/cgi-bin/mjpeg.cgi?channel=1",
-        "/cgi-bin/mjpeg.cgi",
-        "/video1.mjpg",
-        "/video.mjpg",
-        "/mjpg/video.mjpg",
-        "/ISAPI/Streaming/channels/101/httpPreview",
-    ];
-
-    const SNAPSHOT_PATHS = [
-        "/cgi-bin/snapshot.cgi?channel=1",
-        "/cgi-bin/snapshot.cgi",
-        "/snapshot.jpg",
-        "/ISAPI/Streaming/channels/101/picture",
-    ];
+    function camBase(cam) {
+        return cam.user ? `http://${cam.user}:${cam.pass}@${cam.ip}` : `http://${cam.ip}`;
+    }
 
     async function connectLocalCamera() {
         stopLocalCamera();
-
         const cam = getCameraUrl();
         if (!cam) {
             showToast("Zadejte IP kamery v Nastaveni");
+            const p = $("#video-placeholder");
+            if (p) p.style.display = "flex";
             return;
         }
-
-        showToast("Pripojuji kameru " + cam.ip + "...");
-
-        const placeholder = $("#video-placeholder");
-        const canvas = $("#video-canvas");
-        if (placeholder) placeholder.style.display = "none";
-
-        // Remove old mjpeg img if exists
-        if (mjpegImg) { mjpegImg.remove(); mjpegImg = null; }
-
-        // Try MJPEG stream in img tag
-        mjpegImg = document.createElement("img");
-        mjpegImg.style.cssText = "width:100%;height:100%;object-fit:contain;position:absolute;top:0;left:0;";
-        mjpegImg.id = "mjpeg-stream";
-        mjpegImg.alt = "Camera stream";
-
-        let connected = false;
-
-        mjpegImg.onload = () => {
-            if (!connected) {
-                connected = true;
-                cameraOnline = true;
-                $("#camera-status").textContent = "ONLINE";
-                $("#camera-status").className = "status-badge online";
-                showToast("Kamera pripojena!");
-
-                // Draw to canvas for snapshot/recording support
-                startMjpegToCanvas(mjpegImg);
-            }
-        };
-
-        mjpegImg.onerror = () => {
-            if (!connected) {
-                mjpegImg.remove();
-                mjpegImg = null;
-                trySnapshotMode(cam);
-            }
-        };
-
-        // Try MJPEG paths
-        let tried = 0;
-        function tryNextMjpeg() {
-            if (tried >= MJPEG_PATHS.length || connected) {
-                if (!connected) {
-                    trySnapshotMode(cam);
-                }
-                return;
-            }
-            const url = cam.base + MJPEG_PATHS[tried++];
-            mjpegImg.src = url;
-        }
-
-        tryNextMjpeg();
-        mjpegImg._tryNext = tryNextMjpeg;
-        mjpegImg._retryInterval = setInterval(() => {
-            if (!connected && mjpegImg) tryNextMjpeg();
-        }, 3000);
+        showToast("Pripojuji " + cam.ip + "...");
+        const p = $("#video-placeholder");
+        if (p) p.style.display = "none";
+        tryAllSnapshotPaths(cam);
     }
 
-    function startMjpegToCanvas(img) {
+    function showCameraFrame(b64jpeg) {
         const canvas = $("#video-canvas");
         if (!canvas) return;
-        const ctx = canvas.getContext("2d");
-
-        function drawFrame() {
-            if (!img || !img.naturalWidth) {
-                requestAnimationFrame(drawFrame);
-                return;
-            }
-            canvas.width = img.naturalWidth;
-            canvas.height = img.naturalHeight;
-            ctx.drawImage(img, 0, 0);
-            requestAnimationFrame(drawFrame);
-        }
-        drawFrame();
+        const img = new Image();
+        img.onload = () => {
+            canvas.width = img.naturalWidth || 640;
+            canvas.height = img.naturalHeight || 480;
+            canvas.getContext("2d").drawImage(img, 0, 0);
+        };
+        img.src = "data:image/jpeg;base64," + b64jpeg;
     }
 
-    function trySnapshotMode(cam) {
-        showToast("zkousim snapshot mode...");
-        let tried = 0;
-
-        function tryNextSnapshot() {
-            if (tried >= SNAPSHOT_PATHS.length) {
-                showToast("Kamera nedostupna. Zkontrolujte IP a heslo.");
-                const placeholder = $("#video-placeholder");
-                if (placeholder) placeholder.style.display = "flex";
-                return;
-            }
-
-            const url = cam.base + SNAPSHOT_PATHS[tried++];
-            const testImg = new Image();
-            testImg.onload = () => {
+    async function tryAllSnapshotPaths(cam) {
+        const base = camBase(cam);
+        for (const path of SNAPSHOT_PATHS) {
+            const url = base + path;
+            const result = await httpGetNative(url, 3000);
+            if (result.status === 200 && result.body && result.body.length > 100) {
                 cameraOnline = true;
                 $("#camera-status").textContent = "ONLINE";
                 $("#camera-status").className = "status-badge online";
-                showToast("Kamera pripojena (snapshot)!");
+                $("#video-placeholder").classList.add("hidden");
+                showToast("Kamera pripojena!");
                 startSnapshotPolling(url);
-            };
-            testImg.onerror = () => tryNextSnapshot();
-            testImg.src = url + "?t=" + Date.now();
+                showCameraFrame(result.body);
+                return;
+            }
         }
-
-        tryNextSnapshot();
+        showToast("Kamera nedostupna na " + cam.ip + ". Zkontrolujte IP a pripojeni.");
+        const p = $("#video-placeholder");
+        if (p) p.style.display = "flex";
     }
 
     function startSnapshotPolling(url) {
         stopLocalCamera();
-        const canvas = $("#video-canvas");
-        if (!canvas) return;
-        const ctx = canvas.getContext("2d");
-
+        snapshotUrl = url;
+        snapshotActive = true;
+        const poll = async () => {
+            if (!snapshotActive) return;
+            const result = await httpGetNative(snapshotUrl, 3000);
+            if (snapshotActive && result.status === 200 && result.body) {
+                cameraOnline = true;
+                showCameraFrame(result.body);
+            }
+            if (snapshotActive) setTimeout(poll, 1500);
+        };
+        poll();
         snapshotTimer = setInterval(() => {
-            const img = new Image();
-            img.crossOrigin = "anonymous";
-            img.onload = () => {
-                canvas.width = img.naturalWidth;
-                canvas.height = img.naturalHeight;
-                ctx.drawImage(img, 0, 0);
-            };
-            img.src = url + "?t=" + Date.now();
-        }, 1000);
+            if (!snapshotActive) { clearInterval(snapshotTimer); snapshotTimer = null; }
+        }, 10000);
     }
 
     function stopLocalCamera() {
-        if (mjpegImg) {
-            clearInterval(mjpegImg._retryInterval);
-            mjpegImg.remove();
-            mjpegImg = null;
-        }
-        if (snapshotTimer) {
-            clearInterval(snapshotTimer);
-            snapshotTimer = null;
-        }
+        snapshotActive = false;
+        if (snapshotTimer) { clearInterval(snapshotTimer); snapshotTimer = null; }
+        snapshotUrl = null;
+    }
+
+    function checkCameraIP() {
+        const ip = $("#set-cam-ip");
+        if (!ip || !ip.value.trim()) { showToast("Zadejte IP adresu"); return; }
+        const resultEl = $("#cam-check-result");
+        if (resultEl) resultEl.textContent = "Kontroluji...";
+        const cam = { ip: ip.value.trim(), user: ($("#set-cam-user") || {}).value || "admin", pass: ($("#set-cam-pass") || {}).value || "admin" };
+        httpGetNative(camBase(cam) + SNAPSHOT_PATHS[0], 3000).then(res => {
+            if (resultEl) {
+                if (res.status === 200) {
+                    resultEl.textContent = "✓ Kamera online!";
+                    resultEl.style.color = "var(--green)";
+                    cameraOnline = true;
+                    $("#camera-status").textContent = "ONLINE";
+                    $("#camera-status").className = "status-badge online";
+                } else {
+                    resultEl.textContent = "✗ Kamera neodpovida (status " + res.status + ")";
+                    resultEl.style.color = "var(--red)";
+                }
+            }
+        });
     }
 
     // ─── WebSocket ───
@@ -1066,6 +981,10 @@
 
     // ─── Camera Status ───
     async function checkCameraStatus() {
+        if (currentMode === "local") {
+            // Already set by connectLocalCamera/startSnapshotPolling
+            return;
+        }
         try {
             const res = await fetch(`${API}/api/mode`);
             const data = await res.json();
