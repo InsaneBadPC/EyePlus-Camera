@@ -35,9 +35,14 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStreamWriter;
 import java.net.HttpURLConnection;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
 import java.net.URL;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -253,6 +258,92 @@ public class MainActivity extends Activity {
                     callJs("_httpCallback('" + callbackId + "', {status:0,error:\"" + err.replace("\"", "\\\"").replace("\n", " ") + "\"})");
                 }
             });
+        }
+
+        @JavascriptInterface
+        public void scanNetwork(String callbackId) {
+            httpPool.execute(() -> {
+                try {
+                    String localIp = getLocalIpV4();
+                    String subnet = localIp != null ? localIp.substring(0, localIp.lastIndexOf('.') + 1) : "192.168.1.";
+                    List<String> found = Collections.synchronizedList(new ArrayList<>());
+                    AtomicInteger done = new AtomicInteger(0);
+
+                    for (int i = 1; i <= 254; i++) {
+                        final String ip = subnet + i;
+                        httpPool.execute(() -> {
+                            try {
+                                checkCameraAtIp(ip, found);
+                            } catch (Exception ignored) {}
+                            done.incrementAndGet();
+                        });
+                    }
+
+                    // Wait for all to finish (max 30s)
+                    long deadline = System.currentTimeMillis() + 30000;
+                    while (done.get() < 254 && System.currentTimeMillis() < deadline) {
+                        Thread.sleep(200);
+                    }
+
+                    StringBuilder json = new StringBuilder("[");
+                    for (int i = 0; i < found.size(); i++) {
+                        if (i > 0) json.append(",");
+                        json.append(found.get(i));
+                    }
+                    json.append("]");
+                    callJs("_httpCallback('" + callbackId + "', {status:1,body:\"" + json.toString().replace("\"", "\\\"") + "\"})");
+                } catch (Exception e) {
+                    callJs("_httpCallback('" + callbackId + "', {status:0,error:\"" + e.getMessage().replace("\"", "\\\"") + "\"})");
+                }
+            });
+        }
+
+        private void checkCameraAtIp(String ip, List<String> found) {
+            String[] paths = {"/", "/cgi-bin/snapshot.cgi", "/onvif/device_service", "/index.html", "/doc/page/login.asp"};
+            int[] ports = {80, 8080, 554};
+            for (int port : ports) {
+                try {
+                    URL url = new URL("http://" + ip + ":" + port + paths[0]);
+                    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                    conn.setConnectTimeout(500);
+                    conn.setReadTimeout(500);
+                    conn.setRequestMethod("GET");
+                    int code = conn.getResponseCode();
+                    String contentType = conn.getContentType();
+                    if (code == 200 || code == 401 || code == 302) {
+                        String name = "Kamera na " + ip;
+                        String key = ip;
+                        // Try admin:admin auth for snapshot
+                        String probeUrl = "http://admin:admin@" + ip + ":" + port + "/cgi-bin/snapshot.cgi";
+                        boolean hasSnapshot = false;
+                        try {
+                            URL snapUrl = new URL(probeUrl);
+                            HttpURLConnection snapConn = (HttpURLConnection) snapUrl.openConnection();
+                            snapConn.setConnectTimeout(500);
+                            snapConn.setReadTimeout(500);
+                            snapConn.setRequestMethod("GET");
+                            if (snapConn.getResponseCode() == 200) hasSnapshot = true;
+                        } catch (Exception ignored) {}
+
+                        found.add("{\"ip\":\"" + ip + "\",\"port\":" + port + ",\"name\":\"" + name + "\",\"auth\":\"admin:admin\",\"snapshot\":" + hasSnapshot + "}");
+                        return;
+                    }
+                } catch (Exception ignored) {}
+            }
+        }
+
+        private String getLocalIpV4() {
+            try {
+                for (NetworkInterface ni : Collections.list(NetworkInterface.getNetworkInterfaces())) {
+                    if (ni.isLoopback() || !ni.isUp()) continue;
+                    for (InetAddress addr : Collections.list(ni.getInetAddresses())) {
+                        if (!(addr instanceof java.net.Inet4Address) || addr.isLoopbackAddress()) continue;
+                        String ip = addr.getHostAddress();
+                        if (ip != null) return ip;
+                    }
+                }
+            } catch (Exception ignored) {}
+            return "192.168.1";
         }
 
         private void callJs(final String script) {

@@ -353,7 +353,45 @@
     }
 
     async function discoverCameras() {
-        showToast("Automaticke hledani kamer neni v teto verzi podporovano. Zadejte IP manualne.");
+        if (!window.NativeBridge || !window.NativeBridge.scanNetwork) {
+            showToast("Skenovani site neni v tomto rezimu dostupne");
+            return;
+        }
+        const container = $("#discovered-cameras");
+        if (!container) return;
+        container.classList.remove("hidden");
+        container.innerHTML = '<div style="color:var(--text2);padding:8px;">Skenuji sit (254 IP, ~15s)...</div>';
+
+        const result = await new Promise(resolve => {
+            const id = "_scan" + (++_httpId);
+            _httpCallbacks[id] = resolve;
+            window.NativeBridge.scanNetwork(id);
+        });
+
+        if (!result.status || !result.body) {
+            container.innerHTML = '<div style="color:var(--red);padding:8px;">Chyba skenovani</div>';
+            return;
+        }
+
+        let cameras;
+        try { cameras = JSON.parse(result.body); } catch { cameras = []; }
+
+        if (cameras.length === 0) {
+            container.innerHTML = '<div style="color:var(--text2);padding:8px;">Zadne kamery nenalezeny. Zkontrolujte ze telefon a kamery jsou ve stejne WiFi.</div>';
+            return;
+        }
+
+        container.innerHTML = cameras.map((cam, idx) =>
+            `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:6px;">
+                <div>
+                    <strong style="font-size:13px;">${cam.name || 'Kamera'}</strong>
+                    <span style="font-size:12px;color:var(--text2);margin-left:6px;">${cam.ip}:${cam.port}</span>
+                    ${cam.snapshot ? '<span style="font-size:10px;color:var(--green);margin-left:6px;">✓ snapshot</span>' : ''}
+                    <div style="font-size:10px;color:var(--accent);margin-top:2px;">auth: ${cam.auth || 'admin:admin'}</div>
+                </div>
+                <button class="btn-primary btn-sm" onclick="(function(){var ip=document.getElementById('set-cam-ip');if(ip)ip.value='${cam.ip}';var user=document.getElementById('set-cam-user');if(user)user.value='${cam.auth ? cam.auth.split(':')[0] || 'admin' : 'admin'}';var pass=document.getElementById('set-cam-pass');if(pass)pass.value='${cam.auth ? cam.auth.split(':')[1] || 'admin' : 'admin'}';showToast('IP nastavena: ${cam.ip}')})()">Použít</button>
+            </div>`
+        ).join("");
     }
 
     function toggleRecording() {
