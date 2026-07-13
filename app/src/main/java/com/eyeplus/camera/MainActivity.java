@@ -262,13 +262,13 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public void scanNetwork(String callbackId) {
-            httpPool.execute(() -> {
+        public void scanNetwork(final String callbackId) {
+            new Thread(() -> {
                 try {
                     String localIp = getLocalIpV4();
-                    String subnet = localIp != null ? localIp.substring(0, localIp.lastIndexOf('.') + 1) : "192.168.1.";
-                    List<String> found = Collections.synchronizedList(new ArrayList<>());
-                    AtomicInteger done = new AtomicInteger(0);
+                    String subnet = localIp != null && localIp.contains(".") ? localIp.substring(0, localIp.lastIndexOf('.') + 1) : "192.168.1.";
+                    final List<String> found = Collections.synchronizedList(new ArrayList<>());
+                    final AtomicInteger done = new AtomicInteger(0);
 
                     for (int i = 1; i <= 254; i++) {
                         final String ip = subnet + i;
@@ -280,10 +280,9 @@ public class MainActivity extends Activity {
                         });
                     }
 
-                    // Wait for all to finish (max 30s)
-                    long deadline = System.currentTimeMillis() + 30000;
+                    long deadline = System.currentTimeMillis() + 35000;
                     while (done.get() < 254 && System.currentTimeMillis() < deadline) {
-                        Thread.sleep(200);
+                        try { Thread.sleep(200); } catch (InterruptedException ignored) { break; }
                     }
 
                     StringBuilder json = new StringBuilder("[");
@@ -296,37 +295,32 @@ public class MainActivity extends Activity {
                 } catch (Exception e) {
                     callJs("_httpCallback('" + callbackId + "', {status:0,error:\"" + e.getMessage().replace("\"", "\\\"") + "\"})");
                 }
-            });
+            }).start();
         }
 
         private void checkCameraAtIp(String ip, List<String> found) {
-            String[] paths = {"/", "/cgi-bin/snapshot.cgi", "/onvif/device_service", "/index.html", "/doc/page/login.asp"};
             int[] ports = {80, 8080, 554};
             for (int port : ports) {
                 try {
-                    URL url = new URL("http://" + ip + ":" + port + paths[0]);
+                    URL url = new URL("http://" + ip + ":" + port + "/");
                     HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                    conn.setConnectTimeout(500);
-                    conn.setReadTimeout(500);
+                    conn.setConnectTimeout(400);
+                    conn.setReadTimeout(400);
                     conn.setRequestMethod("GET");
                     int code = conn.getResponseCode();
-                    String contentType = conn.getContentType();
-                    if (code == 200 || code == 401 || code == 302) {
-                        String name = "Kamera na " + ip;
-                        String key = ip;
-                        // Try admin:admin auth for snapshot
+                    if (code == 200 || code == 401 || code == 302 || code == 301) {
                         String probeUrl = "http://admin:admin@" + ip + ":" + port + "/cgi-bin/snapshot.cgi";
                         boolean hasSnapshot = false;
                         try {
                             URL snapUrl = new URL(probeUrl);
                             HttpURLConnection snapConn = (HttpURLConnection) snapUrl.openConnection();
-                            snapConn.setConnectTimeout(500);
-                            snapConn.setReadTimeout(500);
+                            snapConn.setConnectTimeout(400);
+                            snapConn.setReadTimeout(400);
                             snapConn.setRequestMethod("GET");
                             if (snapConn.getResponseCode() == 200) hasSnapshot = true;
                         } catch (Exception ignored) {}
 
-                        found.add("{\"ip\":\"" + ip + "\",\"port\":" + port + ",\"name\":\"" + name + "\",\"auth\":\"admin:admin\",\"snapshot\":" + hasSnapshot + "}");
+                        found.add("{\"ip\":\"" + ip + "\",\"port\":" + port + ",\"name\":\"Kamera na " + ip + "\",\"auth\":\"admin:admin\",\"snapshot\":" + hasSnapshot + "}");
                         return;
                     }
                 } catch (Exception ignored) {}

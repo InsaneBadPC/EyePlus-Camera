@@ -29,6 +29,12 @@
     const $ = (s) => document.querySelector(s);
     const $$ = (s) => document.querySelectorAll(s);
 
+    function setCamStatus(msg, color) {
+        const el = $("#cam-connect-status");
+        if (el) { el.textContent = msg; if (color) el.style.color = color; }
+        console.log("CAM: " + msg);
+    }
+
     // ─── Native HTTP (bypasses CORS) ───
     const _httpCallbacks = {};
     let _httpId = 0;
@@ -38,15 +44,20 @@
     function httpGetNative(url, timeout) {
         return new Promise(resolve => {
             const id = "_h" + (++_httpId);
-            _httpCallbacks[id] = resolve;
+            const fallbackTimer = setTimeout(() => {
+                if (_httpCallbacks[id]) {
+                    delete _httpCallbacks[id];
+                    resolve({ status: 0, error: "Http timeout (" + (timeout || 3000) + "ms)", url: url });
+                }
+            }, (timeout || 3000) + 2000);
+            _httpCallbacks[id] = data => { clearTimeout(fallbackTimer); resolve(data); };
             if (window.NativeBridge && window.NativeBridge.httpGet) {
                 window.NativeBridge.httpGet(url, timeout || 3000, id);
             } else {
-                // Fallback: try fetch (will fail on file:// but works via VPS proxy)
                 fetch(url, { signal: AbortSignal.timeout(timeout || 3000) })
                     .then(async r => ({ status: r.status, type: r.headers.get("content-type") || "", body: btoa(await r.text()) }))
                     .catch(e => ({ status: 0, error: e.message }))
-                    .then(data => { _httpCallbacks[id](data); delete _httpCallbacks[id]; });
+                    .then(data => { if (_httpCallbacks[id]) { clearTimeout(fallbackTimer); _httpCallbacks[id](data); delete _httpCallbacks[id]; } });
             }
         });
     }
@@ -822,14 +833,14 @@
         stopLocalCamera();
         const cam = getCameraUrl();
         if (!cam) {
-            showToast("Zadejte IP kamery v Nastaveni");
+            setCamStatus("Zadejte IP kamery v Nastaveni", "var(--orange)");
             const p = $("#video-placeholder");
             if (p) p.style.display = "flex";
             return;
         }
-        showToast("Pripojuji " + cam.ip + "...");
+        setCamStatus("Pripojuji " + cam.ip + "...", "var(--accent)");
         const p = $("#video-placeholder");
-        if (p) p.style.display = "none";
+        if (p) p.style.display = "flex";
         tryAllSnapshotPaths(cam);
     }
 
@@ -847,21 +858,27 @@
 
     async function tryAllSnapshotPaths(cam) {
         const base = camBase(cam);
-        for (const path of SNAPSHOT_PATHS) {
+        let lastError = "";
+        for (let i = 0; i < SNAPSHOT_PATHS.length; i++) {
+            const path = SNAPSHOT_PATHS[i];
             const url = base + path;
+            setCamStatus("Zkousim " + (i + 1) + "/" + SNAPSHOT_PATHS.length + ": " + path, "var(--accent)");
             const result = await httpGetNative(url, 3000);
             if (result.status === 200 && result.body && result.body.length > 100) {
                 cameraOnline = true;
                 $("#camera-status").textContent = "ONLINE";
                 $("#camera-status").className = "status-badge online";
                 $("#video-placeholder").classList.add("hidden");
-                showToast("Kamera pripojena!");
+                setCamStatus("", "");
                 startSnapshotPolling(url);
                 showCameraFrame(result.body);
                 return;
             }
+            const err = result.error || ("status " + result.status);
+            lastError = path + ": " + err;
         }
-        showToast("Kamera nedostupna na " + cam.ip + ". Zkontrolujte IP a pripojeni.");
+        showToast("Kamera nedostupna na " + cam.ip);
+        setCamStatus("FAIL: vsechny cesty selhaly\n" + lastError, "var(--red)");
         const p = $("#video-placeholder");
         if (p) p.style.display = "flex";
     }
@@ -895,22 +912,41 @@
         const ip = $("#set-cam-ip");
         if (!ip || !ip.value.trim()) { showToast("Zadejte IP adresu"); return; }
         const resultEl = $("#cam-check-result");
-        if (resultEl) resultEl.textContent = "Kontroluji...";
+        if (resultEl) { resultEl.textContent = "Testuji..."; resultEl.style.color = "var(--accent)"; }
         const cam = { ip: ip.value.trim(), user: ($("#set-cam-user") || {}).value || "admin", pass: ($("#set-cam-pass") || {}).value || "admin" };
-        httpGetNative(camBase(cam) + SNAPSHOT_PATHS[0], 3000).then(res => {
-            if (resultEl) {
-                if (res.status === 200) {
-                    resultEl.textContent = "✓ Kamera online!";
-                    resultEl.style.color = "var(--green)";
+        const base = camBase(cam);
+        setCamStatus("Test spojeni s " + cam.ip + "...", "var(--accent)");
+
+        // Try each path and show progress
+        (async () => {
+            for (let i = 0; i < SNAPSHOT_PATHS.length; i++) {
+                const path = SNAPSHOT_PATHS[i];
+                const url = base + path;
+                const result = await httpGetNative(url, 3000);
+                if (result.status === 200 && result.body && result.body.length > 100) {
+                    if (resultEl) {
+                        resultEl.textContent = "✓ Kamera online! (cesta: " + path + ")";
+                        resultEl.style.color = "var(--green)";
+                    }
                     cameraOnline = true;
                     $("#camera-status").textContent = "ONLINE";
                     $("#camera-status").className = "status-badge online";
-                } else {
-                    resultEl.textContent = "✗ Kamera neodpovida (status " + res.status + ")";
-                    resultEl.style.color = "var(--red)";
+                    setCamStatus("", "");
+                    showToast("Kamera pripojena!");
+                    stopLocalCamera();
+                    startSnapshotPolling(url);
+                    showCameraFrame(result.body);
+                    return;
                 }
+                const err = result.error || ("status " + result.status);
+                setCamStatus(cam.ip + ": " + path + " -> " + err, "var(--orange)");
             }
-        });
+            if (resultEl) {
+                resultEl.textContent = "✗ Kamera neodpovida - zkontrolujte IP a WiFi";
+                resultEl.style.color = "var(--red)";
+            }
+            setCamStatus("Spojeni s " + cam.ip + " selhalo - zkusili jsme 7 cest", "var(--red)");
+        })();
     }
 
     // ─── WebSocket ───
